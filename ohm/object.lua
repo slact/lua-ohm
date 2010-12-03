@@ -2,8 +2,6 @@ local rawset, rawget, assert, pairs, ipairs = rawset, rawget, assert, pairs, ipa
 local redis=require "ohm.redis"
 module("ohm.datum")
 
-local function getKey()
-
 local datum_methods = {
 	load = function(self, what)
 		if not what then --load the whole damn thing
@@ -22,6 +20,15 @@ local datum_methods = {
 		local key = getKey(self)
 		local res, err
 		
+		local myModel = self:getModel()
+		
+		--this needs to be some sort of transaction or another.
+		for key, index in pairs(myModel:getIndices()) do
+			if(rawget(self[key])) then
+				index:update(key, self[key], self:getSavedValue(key))
+			end
+		end
+
 		if not what then
 			res, err = redis:hmset(key, self)
 		elseif type(what)=='string' then
@@ -40,7 +47,10 @@ local datum_methods = {
 		end
 	end,
 
-	delete =
+	delete = function(self)
+		
+		
+	end,
 
 	getKey = getKey
 } 
