@@ -1,13 +1,15 @@
 module "lohm.index"
-local indexf = "lohm.index:%s:%%s"
+local indexf = "lohm.index:%s:%s:%%s"
 
 local indices = {
 	hash = {
-		update = function(self, key, newval, oldval)
-			if(oldval) then
+		update = function(self, redis, key, newval, oldval)
+			if(oldval~=nil) then
 				redis:srem(self:getKey(oldval), key)
 			end
-			redis:sadd(self:getKey(newval), key)
+			if(newval~=nil) then
+				redis:sadd(self:getKey(newval), key)
+			end
 		end,
 
 		getkey = function(self, val)
@@ -24,13 +26,14 @@ function allIndices(sep)
 	return table.concat(t, sep or ", ")
 end
 
-function new(indexType, model)
+function new(indexType, model, attr)
 	if not indices[indexType] then
 		error("No index type '" .. tostring(indexType) .. "' exists. There are")
 	end
-	
+	assert(type(attr)=='string', 'What do you want indexed? (attr parameter is incorrect)')
 	return setmetatable({
-		keyf = indexf:format(model:makeKey(indexType))
+		keyf = indexf:format(model:makeKey(indexType), attr)
+		end,
 	}, {__index=indices[indexType]})
 end	
 

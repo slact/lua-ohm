@@ -121,14 +121,9 @@ function new(arg, redisconn)
 			if type(attr)~="string" then 
 				attr, indexType = indexType, defaultIndex
 			end
-			self.indices[attr] = Index:new(indexType, model)
+			self.indices[attr] = Index:new(indexType, model, attr)
 		end
 	end
-	model.index = function(self, obj)
-		assert(obj:getModel()==self, "I am not your object's model.")
-		
-	end
-	
 
 	return setmetatable(model, modelmeta)
 end
