@@ -1,23 +1,41 @@
 local pairs, ipairs, table = pairs, ipairs, table
 module "tredis.datum"
 
-
-
 function new(prototype, model)
+	local ids = setmetatable({}, { __mode='k'})
+	local keys = setmetatable({}, { __mode='k'})
 
 	local indices = model.indices
 	local indexed = {}
-	local stored_attr = {}
 	for i, v in pairs(indices) do
-		table.insert(indexed_fields, i)
+		table.insert(indexed, i)
 	end
 
 	local datum_prototype = {
+		setId = function(self, id)
+			if not ids[self] then
+				ids[self]=id
+				keys[self]=model:key(id)
+			else
+				error("Object id is already set (" .. ids[self] .. "). Can't change it -- yet.")
+			end
+			return self
+		end,
+		
+		getKey = function(self)
+			return keys[self]
+		end,
+		
+		getId = function(self)
+			return ids[self]
+		end,
+
 		save = function(self, what)
-			local key = self:getKey()
+			local key = keys[self]
 			if not key then
-				key = getModel():reserveNextKey()
-				self:setKey(key)
+				local id = model:reserveNextId()
+				self:setId(key)
+				key = self:getKey()
 			end
 			if type(what) == "string" then
 				what = { what }
