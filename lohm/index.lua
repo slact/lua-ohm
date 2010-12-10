@@ -37,12 +37,12 @@ function new(indexType, model, attr)
 	}, {__index=indices[indexType]})
 end	
 
-function lookup(self, indextable, limit, offset, lazy)
+function lookup(self, redis, indextable, limit, offset, lazy)
 		local reskey = redis:randomkey()
 		local finishFromSet
-		local res, err = assert(redis:transaction(function()
+		local res, err = assert(redis:transaction(function(r)
 			for index, value in pairs(indextable) do
-				redis:sunionstore(reskey, index:getKey(value))
+				r:sunionstore(reskey, index:getKey(value))
 			end
 			if not lazy then
 				finishFromSet = model:fromSetDelayed(reskey, limit, offset)

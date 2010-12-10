@@ -1,6 +1,6 @@
 local Datum = require "lohm.datum"
 local Index = require "lohm.index"
-
+local assert, coroutine, table, pairs, ipairs, type = assert, coroutine, table, pairs, ipairs, type
 module "lohm.model"
 
 local function reserveId(self)
@@ -41,7 +41,6 @@ do
 		end
 	end
 	
-	
 	modelmeta = { __index = {
 		find = function(self, arg)
 			if type(arg)=="table" then
@@ -71,7 +70,7 @@ do
 				assert(thisIndex, "model attribute " .. attr .. " isn't indexed. index it first, please.")
 				indextable[thisIndex]=val
 			end
-			return Index:lookup(indextable, limit, offset)
+			return Index:lookup(self.redis, indextable, limit, offset)
 			
 		end,
 		
