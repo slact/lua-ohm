@@ -96,20 +96,16 @@ do
 
 		key = function(self, id)
 			return keymaker(id)
-		end,
-
-		getModel = function(self, id)
-			return model[self]
-		end,
+		end
 	}}
 end
 
 function new(arg, redisconn)
 	local model, object = arg.model or {}, arg.datum or arg.object or {}
-	object = Datum.new(datum, model)
-	model.redis = redisconn --presumably an open connection
 	assert(redisconn:ping())
+	model.redis = redisconn --presumably an open connection
 
+	
 	local key, keymaker = arg.key, nil
 	assert(arg.key, "Redis object Must. Have. Key.")
 	if type(key)=="string" then
@@ -119,10 +115,6 @@ function new(arg, redisconn)
 		end
 	elseif type(key)=="function" then
 		keymaker = key
-	end
-
-	model.new = function(self, res, id)
-		object:new(res or {}, id)
 	end
 
 	model.indices = {}
@@ -135,8 +127,13 @@ function new(arg, redisconn)
 			if type(attr)~="string" then 
 				attr, indexType = indexType, defaultIndex
 			end
-			self.indices[attr] = Index:new(indexType, model, attr)
+			mode.indices[attr] = Index:new(indexType, model, attr)
 		end
+	end
+	
+	object = Datum.new(datum, model)
+	model.new = function(self, res, id)
+		object:new(res or {}, id)
 	end
 
 	return setmetatable(model, modelmeta)

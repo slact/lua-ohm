@@ -4,10 +4,11 @@ module ("lohm", function(self)
 end)
 
 --arguments:
+	-- key (string/function): sprintf-able string or a function to generate a key. something like "myfoo:%s"
 	-- model (table): extra functions etc. belonging to the model
 	-- object (table): extra functions  etc. for objects
 	-- indices (table): attributes to index (and with what index, if given. defaults to Index:defaultIndex()
 
-function new(arg)
-	return Model.new(arg)
+function new(arg, redis_connection)
+	return Model.new(arg, redis_connection)
 end
