@@ -5,7 +5,7 @@ module "lohm.model"
 
 local function reserveId(self)
 	if self.autoincrement ~= false then
-		local res, err = redis:incr(autoincr_key)
+		local res, err = self.redis:incr(autoincr_key)
 		return res
 	else
 		return nil, "don't know how to autoincrement ids for key pattern " .. (keypattern or "???")
@@ -32,7 +32,7 @@ local modelmeta = { __index = {
 		if not key then return 
 			nil, "Nothing to look for" 
 		end
-		local res, err = redis:hgetall(key)
+		local res, err = self.redis:hgetall(key)
 		if res then
 			return self:new(id, res)
 		else
@@ -52,9 +52,9 @@ local modelmeta = { __index = {
 	end,
 	
 	fromSortDelayed = function(self, key, pattern, maxResults, offset, descending, lexicographic)
-		local res, err = assert(redis:sort(key, {
+		local res, err = assert(self.redis:sort(key, {
 			by=pattern or "nosort", 
-			get="# GET " .. self:getKey():format("*"),  --oh the ugly!
+			get="# GET " .. self:key("*"),  --oh the ugly!
 			sort=descending and "desc" or nil, 
 			alpha = lexicographic or nil,
 			limit = maxResults and {offset or 0, maxResults}
@@ -95,6 +95,8 @@ local modelmeta = { __index = {
 function new(arg, redisconn)
 	local model, object = arg.model or {}, arg.datum or arg.object or {}
 	object = Datum.new(datum, model)
+	model.redis = redisconn --presumably an open connection
+	assert(redisconn:ping())
 
 	local key, keymaker = arg.key, nil
 	assert(arg.key, "Redis object Must. Have. Key.")

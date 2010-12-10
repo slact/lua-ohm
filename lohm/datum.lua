@@ -1,4 +1,4 @@
-local pairs, ipairs, table = pairs, ipairs, table
+local pairs, ipairs, table, error, setmetatable, assert, type, coroutine = pairs, ipairs, table, error, setmetatable, assert, type, coroutine
 module "tredis.datum"
 
 function new(prototype, model)
@@ -42,7 +42,7 @@ function new(prototype, model)
 			end
 			assert(key, "Tried to save data without a key or key assignment scheme. You can't do that.")
 
-			local res, err = redis:check_and_set(key, function(r)
+			local res, err = model.redis:check_and_set(key, function(r)
 				--take care of indexing
 				local change, old_indexed_attr = {}, {}
 				if not what then
@@ -67,7 +67,7 @@ function new(prototype, model)
 				for k, v in pairs(old_indexed_attr)
 					indices[k]:update(r, key, change[k], v)
 				end
-				redis:hmset(key, change)
+				model.redis:hmset(key, change)
 			end)
 			if res then
 				return self
@@ -78,7 +78,7 @@ function new(prototype, model)
 
 		delete = function(self)
 			local key = assert(self:getKey(), "Cannot delete without a key")
-			local res, err = redis:check_and_set(self:getKey(), function(r)
+			local res, err = model.redis:check_and_set(self:getKey(), function(r)
 				--WATCH key
 				--get old values 
 				local current = r:hmget(unpack(indexed))
@@ -87,7 +87,7 @@ function new(prototype, model)
 				for attr, val in pairs(current) do
 					indices[attr]:update(r, key, nil, val)
 				end
-				redis:del(key)
+				model.redis:del(key)
 				--EXEC
 			end)
 			if not res or not res[#res] then error(err) end
@@ -98,7 +98,7 @@ function new(prototype, model)
 		get = function(self, attr)
 			local res = rawget(self, attr)
 			if not res then 
-				res = assert(redis:hget(self:getKey(), attr))
+				res = assert(model.redis:hget(self:getKey(), attr))
 				self[attr]=res
 			end
 			return res
