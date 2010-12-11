@@ -3,20 +3,24 @@ local Index = require "lohm.index"
 local assert, coroutine, table, pairs, ipairs, type = assert, coroutine, table, pairs, ipairs, type
 module "lohm.model"
 
-local function reserveId(self)
-	if self.autoincrement ~= false then
-		local res, err = self.redis:incr(autoincr_key)
-		return res
-	else
-		return nil, "don't know how to autoincrement ids for key pattern " .. (keypattern or "???")
+-- unique identifier generators
+local newId = {
+	autoincrement = function(model)
+		local key = ("%s:autoincrement"):format(model:key("id"))
+		return model.redis:incr(key)
+	end,
+
+	uuid = function()
+		local res, uuid, err = pcall(require "uuid")
+		if not res then 
+			return function()
+				error("UUID lua module not found.")
+			end
+		else
+			return uuid.new
+		end
 	end
-end
-
-local function modelcache
-
-local function getKey(self, id)
-	return modelcache[self]:getKey(id)
-end
+}
 
 local modelmeta
 do
@@ -26,7 +30,7 @@ do
 			get="# GET " .. self:key("*"),  --oh the ugly!
 			sort=descending and "desc" or nil, 
 			alpha = lexicographic or nil,
-			limit = maxResults and {offset or 0, maxResults}
+			limit = maxResults and { offset or 0, maxResults }
 		}))
 		if delay then
 			res, err = coroutine.yield()
@@ -42,6 +46,10 @@ do
 	end
 	
 	modelmeta = { __index = {
+		reserveNextId = function(self)
+			return newid.autoincrement(self)
+		end,
+
 		find = function(self, arg)
 			if type(arg)=="table" then
 				return self:findByAttr(arg)
@@ -101,24 +109,14 @@ do
 end
 
 function new(arg, redisconn)
+
 	local model, object = arg.model or {}, arg.datum or arg.object or {}
+	assert(type(arg.key)=='string', "Redis object Must. Have. Key.")
+
 	assert(redisconn:ping())
 	model.redis = redisconn --presumably an open connection
 
-	
-	local key, keymaker = arg.key, nil
-	assert(arg.key, "Redis object Must. Have. Key.")
-	if type(key)=="string" then
-		assert(key:format('foo')~=key:format('bar'), "Invalid key pattern string (\""..key.."\") produces same key for different ids.")
-		keymaker = function(arg)
-			return key:format(arg)
-		end
-	elseif type(key)=="function" then
-		keymaker = key
-	end
-
 	model.indices = {}
-
 	local indices = arg.index or arg.indices
 	if indices and #indices>0 then
 		
@@ -127,7 +125,7 @@ function new(arg, redisconn)
 			if type(attr)~="string" then 
 				attr, indexType = indexType, defaultIndex
 			end
-			mode.indices[attr] = Index:new(indexType, model, attr)
+			model.indices[attr] = Index:new(indexType, model, attr)
 		end
 	end
 	
@@ -135,14 +133,6 @@ function new(arg, redisconn)
 	model.new = function(self, res, id)
 		object:new(res or {}, id)
 	end
-
+	
 	return setmetatable(model, modelmeta)
-end
-
-
-
-function setAutoIncrementKey(self, key)
-	assert(type(key)=="string", "Autoincrement key must be a string")
-	autoincr_key = key
-	return self
 end
