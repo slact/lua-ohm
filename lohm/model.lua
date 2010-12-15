@@ -47,7 +47,7 @@ do
 	
 	modelmeta = { __index = {
 		reserveNextId = function(self)
-			return newid.autoincrement(self)
+			return newId.autoincrement(self)
 		end,
 
 		find = function(self, arg)
@@ -100,10 +100,6 @@ do
 
 		fromSet = function(self, ...)
 			return self:fromSetDelayed(self, ...)()
-		end, 
-
-		key = function(self, id)
-			return keymaker(id)
 		end
 	}}
 end
@@ -119,7 +115,6 @@ function new(arg, redisconn)
 	model.indices = {}
 	local indices = arg.index or arg.indices
 	if indices and #indices>0 then
-		
 		local defaultIndex = Index:getDefault()
 		for attr, indexType in pairs(indices) do
 			if type(attr)~="string" then 
@@ -129,9 +124,14 @@ function new(arg, redisconn)
 		end
 	end
 	
-	object = Datum.new(datum, model)
+	local newobject = Datum.new(object, model)
 	model.new = function(self, res, id)
-		object:new(res or {}, id)
+		return newobject(res or {}, id)
+	end
+
+	local key = arg.key
+	model.key = function(self, id)
+		return key:format(id)
 	end
 	
 	return setmetatable(model, modelmeta)
