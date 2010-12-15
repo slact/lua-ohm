@@ -1,9 +1,10 @@
 local pairs, ipairs, table, error, setmetatable, assert, type, coroutine = pairs, ipairs, table, error, setmetatable, assert, type, coroutine
-module "tredis.datum"
+module "lohm.datum"
 
 function new(prototype, model)
 	local ids = setmetatable({}, { __mode='k'})
 	local keys = setmetatable({}, { __mode='k'})
+	
 
 	local indices = model.indices
 	local indexed = {}
@@ -64,7 +65,7 @@ function new(prototype, model)
 				coroutine.yield() --MULTI
 
 				--update indices
-				for k, v in pairs(old_indexed_attr)
+				for k, v in pairs(old_indexed_attr) do
 					indices[k]:update(r, key, change[k], v)
 				end
 				model.redis:hmset(key, change)
@@ -106,7 +107,7 @@ function new(prototype, model)
 	}	
 	
 	--merge that shit. aww yeah.
-	for i, v in pairs(prototype)
+	for i, v in pairs(prototype or {}) do
 		if not datum_prototype[i] then
 			datum_prototype[i]=v
 		else

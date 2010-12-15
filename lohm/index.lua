@@ -1,3 +1,4 @@
+local pcall, require, table, tostring, pairs, ipairs, setmetatable = pcall, require, table, tostring, pairs, ipairs, setmetatable
 module "lohm.index"
 local indexf = "lohm.index:%s:%s:%%s"
 
@@ -49,27 +50,25 @@ function new(indexType, model, attr)
 	assert(type(attr)=='string', 'What do you want indexed? (attr parameter is incorrect)')
 	return setmetatable({
 		keyf = indexf:format(model:makeKey(indexType), attr)
-		end,
 	}, {__index=indices[indexType]})
 end	
 
 function lookup(self, redis, indextable, limit, offset, lazy)
-		local reskey = redis:randomkey()
-		local finishFromSet
-		local res, err = assert(redis:transaction(function(r)
-			for index, value in pairs(indextable) do
-				r:sunionstore(reskey, index:getKey(value))
-			end
-			if not lazy then
-				finishFromSet = model:fromSetDelayed(reskey, limit, offset)
-			end
-		end))
-		if not lazy then
-			res, err = finishFromSet(res[#res])
-		else
-			res, err = model:fromSetLazily(reskey)
+	local reskey = redis:randomkey()
+	local finishFromSet
+	local res, err = assert(redis:transaction(function(r)
+		for index, value in pairs(indextable) do
+			r:sunionstore(reskey, index:getKey(value))
 		end
-		redis:del(randomkey)
-		return assert(res, err)
+		if not lazy then
+			finishFromSet = model:fromSetDelayed(reskey, limit, offset)
+		end
+	end))
+	if not lazy then
+		res, err = finishFromSet(res[#res])
+	else
+		res, err = model:fromSetLazily(reskey)
 	end
+	redis:del(randomkey)
+	return assert(res, err)
 end

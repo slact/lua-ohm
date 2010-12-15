@@ -1,6 +1,6 @@
 local Datum = require "lohm.datum"
 local Index = require "lohm.index"
-local assert, coroutine, table, pairs, ipairs, type = assert, coroutine, table, pairs, ipairs, type
+local assert, coroutine, table, pairs, ipairs, type, setmetatable = assert, coroutine, table, pairs, ipairs, type, setmetatable
 module "lohm.model"
 
 -- unique identifier generators
