@@ -1,3 +1,4 @@
+local print = print
 local pairs, ipairs, table, error, setmetatable, assert, type, coroutine = pairs, ipairs, table, error, setmetatable, assert, type, coroutine
 module "lohm.datum"
 
@@ -35,7 +36,7 @@ function new(prototype, model)
 			local key = keys[self]
 			if not key then
 				local id = model:reserveNextId()
-				self:setId(key)
+				self:setId(id)
 				key = self:getKey()
 			end
 			if type(what) == "string" then
@@ -63,12 +64,11 @@ function new(prototype, model)
 				end
 				
 				coroutine.yield() --MULTI
-
 				--update indices
 				for k, v in pairs(old_indexed_attr) do
 					indices[k]:update(r, key, change[k], v)
 				end
-				model.redis:hmset(key, change)
+				r:hmset(key, change)
 			end)
 			if res then
 				return self
@@ -118,7 +118,7 @@ function new(prototype, model)
 	local datum_meta = { __index = datum_prototype }
 
 	--return a factory.
-	return function(self, data, id)
+	return function(data, id)
 		local obj =  setmetatable(data or {}, datum_meta)
 		if(id) then
 			obj:setId(id)
