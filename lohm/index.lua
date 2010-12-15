@@ -1,4 +1,5 @@
 local pcall, require, table, tostring, pairs, ipairs, setmetatable = pcall, require, table, tostring, pairs, ipairs, setmetatable
+local error = error
 module "lohm.index"
 local indexf = "lohm.index:%s:%s:%%s"
 
@@ -43,9 +44,13 @@ function allIndices(sep)
 	return table.concat(t, sep or ", ")
 end
 
+function getDefault()
+	return "hash"
+end
+
 function new(indexType, model, attr)
 	if not indices[indexType] then
-		error("No index type '" .. tostring(indexType) .. "' exists. There are")
+		error(("Unknown index '%s'. Known indices: %s."):format(tostring(indexType), allIndices()))
 	end
 	assert(type(attr)=='string', 'What do you want indexed? (attr parameter is incorrect)')
 	return setmetatable({
