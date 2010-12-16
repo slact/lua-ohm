@@ -1,4 +1,4 @@
-local pcall, require, table, tostring, pairs, ipairs, setmetatable = pcall, require, table, tostring, pairs, ipairs, setmetatable
+local print, type, assert, pcall, require, table, tostring, pairs, ipairs, setmetatable = print, type, assert, pcall, require, table, tostring, pairs, ipairs, setmetatable
 local error = error
 module "lohm.index"
 local indexf = "lohm.index:%s:%s:%%s"
@@ -22,6 +22,7 @@ do
 
 	indices.hash = {
 		update = function(self, redis, key, newval, oldval)
+			print(self, redis, key, newval, oldval)
 			if(oldval~=nil) then
 				redis:srem(self:getKey(oldval), key)
 			end
@@ -30,7 +31,7 @@ do
 			end
 		end,
 
-		getkey = function(self, val)
+		getKey = function(self, val)
 			return self.keyf:format(hash(val))
 		end
 	}
@@ -48,32 +49,12 @@ function getDefault()
 	return "hash"
 end
 
-function new(indexType, model, attr)
+function new(self, indexType, model, attr)
 	if not indices[indexType] then
 		error(("Unknown index '%s'. Known indices: %s."):format(tostring(indexType), allIndices()))
 	end
 	assert(type(attr)=='string', 'What do you want indexed? (attr parameter is incorrect)')
 	return setmetatable({
-		keyf = indexf:format(model:makeKey(indexType), attr)
+		keyf = indexf:format(model:key(indexType), attr)
 	}, {__index=indices[indexType]})
 end	
-
-function lookup(self, redis, indextable, limit, offset, lazy)
-	local reskey = redis:randomkey()
-	local finishFromSet
-	local res, err = assert(redis:transaction(function(r)
-		for index, value in pairs(indextable) do
-			r:sunionstore(reskey, index:getKey(value))
-		end
-		if not lazy then
-			finishFromSet = model:fromSetDelayed(reskey, limit, offset)
-		end
-	end))
-	if not lazy then
-		res, err = finishFromSet(res[#res])
-	else
-		res, err = model:fromSetLazily(reskey)
-	end
-	redis:del(randomkey)
-	return assert(res, err)
-end

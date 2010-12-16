@@ -1,6 +1,10 @@
+local function I(...)
+	return ...
+end
 local Datum = require "lohm.datum"
 local Index = require "lohm.index"
-local assert, coroutine, table, pairs, ipairs, type, setmetatable = assert, coroutine, table, pairs, ipairs, type, setmetatable
+local next, assert, coroutine, table, pairs, ipairs, type, setmetatable = next, assert, coroutine, table, pairs, ipairs, type, setmetatable
+local print = print
 module "lohm.model"
 
 -- unique identifier generators
@@ -52,33 +56,52 @@ do
 
 		find = function(self, arg)
 			if type(arg)=="table" then
-				return self:findByAttr(arg)
+				return  self:findByAttr(arg)
 			else
 				return self:findById(arg)
 			end
 		end,
 		
 		findById = function(self, id)
-			local key = getKey(self, id)
+			local key = self:key(id)
 			if not key then return 
 				nil, "Nothing to look for" 
 			end
 			local res, err = self.redis:hgetall(key)
-			if res then
-				return self:new(id, res)
+			if res and next(res) then
+				return self:new(res, id)
 			else
 				return nil, "Not found."
 			end
 		end,
 
 		findByAttr = function(self, arg, limit, offset)
-			local indextable = {}
+			local indices, indextable = self.indices, {}
 			for attr, val in pairs(arg) do
-				local thisIndex = self.indices[attr]
+				local thisIndex = indices[attr]
 				assert(thisIndex, "model attribute " .. attr .. " isn't indexed. index it first, please.")
 				indextable[thisIndex]=val
 			end
-			return Index:lookup(self.redis, indextable, limit, offset)
+
+			local lazy = false
+
+			local randomkey = self.redis:randomkey()
+			local finishFromSet
+			local res, err = assert(self.redis:transaction(function(r)
+				for index, value in pairs(indextable) do
+					r:sunionstore(randomkey, index:getKey(value))
+				end
+				if not lazy then
+					finishFromSet = self:fromSetDelayed(randomkey, limit, offset)
+					r:del(randomkey)
+				end
+			end))
+			if not lazy then
+				res, err = finishFromSet(res[#res])
+			else
+				res, err = self:fromSetLazily(randomkey)
+			end
+			return res, err
 			
 		end,
 		
@@ -94,7 +117,8 @@ do
 
 		fromSetDelayed = function(self, setKey, maxResults, offset, descending, lexicographic)
 			local wrapper = coroutine.wrap(fromSort_general)
-			assert(wrapper(true, self, setKey, nil, maxResults, offset, descending, lexicographic))
+			print(wrapper, type(wrapper))
+			print(wrapper(true, self, setKey, nil, maxResults, offset, descending, lexicographic))
 			return wrapper
 		end, 
 
@@ -108,9 +132,14 @@ function new(arg, redisconn)
 
 	local model, object = arg.model or {}, arg.datum or arg.object or {}
 	assert(type(arg.key)=='string', "Redis object Must. Have. Key.")
-
+	assert(redisconn, "Valid redis connection needed")
 	assert(redisconn:ping())
 	model.redis = redisconn --presumably an open connection
+
+	local key = arg.key
+	model.key = function(self, id)
+		return key:format(id)
+	end
 
 	model.indices = {}
 	local indices = arg.index or arg.indices
@@ -129,10 +158,6 @@ function new(arg, redisconn)
 		return newobject(res or {}, id)
 	end
 
-	local key = arg.key
-	model.key = function(self, id)
-		return key:format(id)
-	end
 	
 	return setmetatable(model, modelmeta)
 end

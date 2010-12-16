@@ -1,5 +1,5 @@
 local print = print
-local pairs, ipairs, table, error, setmetatable, assert, type, coroutine = pairs, ipairs, table, error, setmetatable, assert, type, coroutine
+local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack = pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack
 module "lohm.datum"
 
 function new(prototype, model)
@@ -9,8 +9,8 @@ function new(prototype, model)
 
 	local indices = model.indices
 	local indexed = {}
-	for i, v in pairs(indices) do
-		table.insert(indexed, i)
+	for index_name, index_table in pairs(indices) do
+		table.insert(indexed, index_name)
 	end
 
 	local datum_prototype = {
@@ -59,14 +59,17 @@ function new(prototype, model)
 				for k, v in  pairs(change) do
 					if indices[k] then
 						--TODO: hmget will probably be faster
-						old_indexed_attr[k] = r:hget(k)
+						old_indexed_attr[k] = r:hget(key, k)
 					end
 				end
-				
+				 
 				coroutine.yield() --MULTI
 				--update indices
-				for k, v in pairs(old_indexed_attr) do
-					indices[k]:update(r, key, change[k], v)
+				for k, v in pairs(change) do
+					local index = indices[k]
+					if index then
+						indices[k]:update(r, key, v, old_indexed_attr[k])
+					end
 				end
 				r:hmset(key, change)
 			end)
@@ -79,16 +82,20 @@ function new(prototype, model)
 
 		delete = function(self)
 			local key = assert(self:getKey(), "Cannot delete without a key")
-			local res, err = model.redis:check_and_set(self:getKey(), function(r)
+			print(key)
+			local res, err = model.redis:check_and_set(key, function(r)
 				--WATCH key
 				--get old values 
-				local current = r:hmget(unpack(indexed))
+				local current = {}
+				if #indexed>0 then
+					current = r:hmget(key, indexed)
+				end
 				coroutine.yield()
 				--MULTI
 				for attr, val in pairs(current) do
 					indices[attr]:update(r, key, nil, val)
 				end
-				model.redis:del(key)
+				r:del(key)
 				--EXEC
 			end)
 			if not res or not res[#res] then error(err) end
@@ -103,8 +110,13 @@ function new(prototype, model)
 				self[attr]=res
 			end
 			return res
+		end,
+
+		set = function(self, attr, val)
+			self[attr]=val
+			return self
 		end
-	}	
+	}
 	
 	--merge that shit. aww yeah.
 	for i, v in pairs(prototype or {}) do
@@ -119,6 +131,7 @@ function new(prototype, model)
 
 	--return a factory.
 	return function(data, id)
+		print(type(data), data, id)
 		local obj =  setmetatable(data or {}, datum_meta)
 		if(id) then
 			obj:setId(id)
