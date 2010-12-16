@@ -28,22 +28,22 @@ local newId = {
 
 local modelmeta
 do
-	local function fromSort_general(delay, self, key, pattern, maxResults, offset, descending, lexicographic)
-		local res, err = assert(self.redis:sort(key, {
+	local function fromSort_general(self, key, pattern, maxResults, offset, descending, lexicographic)
+		local res, err = self.redis:sort(key, {
 			by=pattern or "nosort", 
-			get="# GET " .. self:key("*"),  --oh the ugly!
+			get="#",  --oh the ugly!
 			sort=descending and "desc" or nil, 
 			alpha = lexicographic or nil,
 			limit = maxResults and { offset or 0, maxResults }
-		}))
-		if delay then
+		})
+		if type(res)=='table' and res.queued==true then
 			res, err = coroutine.yield()
 		end
 		if res then
-			for i=0, #res, 2 do
-				res[i+1]=self:new(res[i], res[i+1])
-				table.remove(res, i)
+			for i, id in pairs(res) do
+				res[i]=self:findById(id)
 			end
+			return res
 		else
 			return nil, err or "unexpected thing cryptically happened..."
 		end
@@ -85,29 +85,22 @@ do
 
 			local lazy = false
 
-			local randomkey = self.redis:randomkey()
+			local randomkey = "sunionresult"
 			local finishFromSet
 			local res, err = assert(self.redis:transaction(function(r)
 				for index, value in pairs(indextable) do
 					r:sunionstore(randomkey, index:getKey(value))
 				end
-				if not lazy then
-					finishFromSet = self:fromSetDelayed(randomkey, limit, offset)
-					r:del(randomkey)
-				end
 			end))
-			if not lazy then
-				res, err = finishFromSet(res[#res])
-			else
-				res, err = self:fromSetLazily(randomkey)
-			end
+			local res, err = self:fromSet(randomkey, limit, offset)
+			print(res, err)
+			--self.redis:del(randomkey)
 			return res, err
-			
 		end,
 		
 		fromSortDelayed = function(self, key, pattern, maxResults, offset, descending, lexicographic)
 			local wrapper = coroutine.wrap(fromSort_general)
-			assert(wrapper(true, self, key, pattern, maxResults, offset, descending, lexicographic))
+			assert(wrapper(self, key, pattern, maxResults, offset, descending, lexicographic))
 			return wrapper
 		end, 
 
@@ -117,13 +110,12 @@ do
 
 		fromSetDelayed = function(self, setKey, maxResults, offset, descending, lexicographic)
 			local wrapper = coroutine.wrap(fromSort_general)
-			print(wrapper, type(wrapper))
-			print(wrapper(true, self, setKey, nil, maxResults, offset, descending, lexicographic))
+			wrapper(self, setKey, nil, maxResults, offset, descending, lexicographic)
 			return wrapper
 		end, 
 
-		fromSet = function(self, ...)
-			return self:fromSetDelayed(self, ...)()
+		fromSet = function(self, setKey, maxResults, offset, descending, lexicographic)
+			return fromSort_general(self, setKey, nil, maxResults, offset, descending, lexicographic)
 		end
 	}}
 end

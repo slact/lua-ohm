@@ -21,13 +21,13 @@ do
 	end
 
 	indices.hash = {
-		update = function(self, redis, key, newval, oldval)
-			print(self, redis, key, newval, oldval)
+		update = function(self, redis, id, newval, oldval)
+			assert(id, "id must be given")
 			if(oldval~=nil) then
-				redis:srem(self:getKey(oldval), key)
+				redis:srem(self:getKey(oldval), id)
 			end
 			if(newval~=nil) then
-				redis:sadd(self:getKey(newval), key)
+				redis:sadd(self:getKey(newval), id)
 			end
 		end,
 

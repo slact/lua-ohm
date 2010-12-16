@@ -1,4 +1,4 @@
-local print = print
+local print, getmetatable = print, getmetatable
 local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack = pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack
 module "lohm.datum"
 
@@ -39,11 +39,12 @@ function new(prototype, model)
 				self:setId(id)
 				key = self:getKey()
 			end
+			
 			if type(what) == "string" then
 				what = { what }
 			end
 			assert(key, "Tried to save data without a key or key assignment scheme. You can't do that.")
-
+			local id = self:getId()
 			local res, err = model.redis:check_and_set(key, function(r)
 				--take care of indexing
 				local change, old_indexed_attr = {}, {}
@@ -62,13 +63,12 @@ function new(prototype, model)
 						old_indexed_attr[k] = r:hget(key, k)
 					end
 				end
-				 
 				coroutine.yield() --MULTI
 				--update indices
 				for k, v in pairs(change) do
 					local index = indices[k]
 					if index then
-						indices[k]:update(r, key, v, old_indexed_attr[k])
+						indices[k]:update(r, id, v, old_indexed_attr[k])
 					end
 				end
 				r:hmset(key, change)
@@ -82,7 +82,6 @@ function new(prototype, model)
 
 		delete = function(self)
 			local key = assert(self:getKey(), "Cannot delete without a key")
-			print(key)
 			local res, err = model.redis:check_and_set(key, function(r)
 				--WATCH key
 				--get old values 
@@ -92,8 +91,9 @@ function new(prototype, model)
 				end
 				coroutine.yield()
 				--MULTI
+				local id = self:getId()
 				for attr, val in pairs(current) do
-					indices[attr]:update(r, key, nil, val)
+					indices[attr]:update(r, id, nil, val)
 				end
 				r:del(key)
 				--EXEC
@@ -131,7 +131,6 @@ function new(prototype, model)
 
 	--return a factory.
 	return function(data, id)
-		print(type(data), data, id)
 		local obj =  setmetatable(data or {}, datum_meta)
 		if(id) then
 			obj:setId(id)
