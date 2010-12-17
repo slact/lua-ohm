@@ -6,12 +6,12 @@ module ("lohm.reference", function(t)
 end)
 
 function new(model, cascade)
-	print(model)
 	return {
 		load = function(redis, self, key, attr)
 			local id, err = redis:hget(key, attr)
 			if not id then return nil, err end
-			return model:find(id)
+			local res =  model:find(id)
+			return res
 		end, 
 
 		save = function(redis, self, key, attr, val)
@@ -26,6 +26,7 @@ function new(model, cascade)
 			else
 				coroutine.yield()
 			end
+			print("HEYO")
 			return redis:hset(key, attr, val:getId())
 		end,
 		

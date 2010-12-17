@@ -1,5 +1,7 @@
 local print, getmetatable, rawget = print, getmetatable, rawget
-local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack = pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack
+local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack, next = pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack, next
+
+local debug = debug
 local function I(...) return ... end
 module "lohm.datum"
 
@@ -9,16 +11,17 @@ function new(prototype, model, attributes)
 	
 	--custom attribute stuff
 	attributes = attributes or {}
-	setmetatable(attributes, {__index={
-		load=function(redis, self, key, attr)
-			return redis:hget(key, attr)
-		end, 
-		save=function(redis, self, key, attr, val)
-			return redis:hset(key, attr, val)
-		end,
-		delete=I
-	}})
-	
+	setmetatable(attributes, {__index=function(t,k)
+		return {
+			load=function(redis, self, key, attr)
+				return redis:hget(key, attr)
+			end, 
+			save=function(redis, self, key, attr, val)
+				return redis:hset(key, attr, val)
+			end,
+			delete=I
+		}
+	end})
 	local function customattr(self, custom)
 		local afterYield = {}
 		local key = self:getKey()
@@ -42,7 +45,9 @@ function new(prototype, model, attributes)
 		table.insert(indexed, index_name)
 	end
 
-	local datum_prototype = setmetatable({
+
+
+	local datum_prototype = {
 		setId = function(self, id)
 			if not ids[self] then
 				ids[self]=id
@@ -91,7 +96,8 @@ function new(prototype, model, attributes)
 				
 				--get the _raw_ attribute values that are being updated and are indexed. While we're at ir, see what custom attributes we need to save
 				for k, v in  pairs(change) do
-					if indices[k] then
+				
+					if indices[k] and type(v)~='table' then
 						--TODO: hmget will probably be faster
 						old_indexed_attr[k] = r:hget(key, k)
 					end
@@ -134,7 +140,7 @@ function new(prototype, model, attributes)
 				after()
 				local id = self:getId()
 				for attr, val in pairs(current) do
-					indices[attr]:update(r, id, nil, val)
+					indices[attr]:update(selfr, id, nil, val)
 				end
 				
 				r:del(key)
@@ -161,7 +167,24 @@ function new(prototype, model, attributes)
 			self[attr]=val
 			return self
 		end
-	}, {__index = datum_ondemand_loader })
+	}
+
+	--TODO: should find a better way to do this. metatable metatables aren't quite as good a solution as I had hoped.
+	local function datum_ondemand_loader(self, attr)
+		local proto = datum_prototype[attr]
+		if proto then
+			return proto
+		else
+			local key = self:getKey()
+			if key then
+				debug.print(getmetatable(attributes), attr)
+				local res = attributes[attr].load(model.redis, self, key, attr)
+				self[attr]=res
+				return res
+			end
+			return nil
+		end
+	end
 	
 	--merge that shit. aww yeah.
 	for i, v in pairs(prototype or {}) do
@@ -172,7 +195,7 @@ function new(prototype, model, attributes)
 		end
 	end
 	
-	local datum_meta = { __index = datum_prototype }
+	local datum_meta = { __index = datum_ondemand_loader }
 
 	--return a factory.
 	return function(data, id)
