@@ -13,28 +13,32 @@ local function newr()
 	redis:flushdb()
 	return redis
 end
---[[
+
 function assert_type(var, typ)
 	return assert(type(var)==typ, "wrong type")
 end
+
 function assert_true(...)
 	for i, v in pairs{...} do
 		assert(v and v)
 	end
 end
+
 function context(lbl, tests)
 	return tests()
 end
+
 function test(lbl, test)
 	return test()
 end
+
 function assert_equal(a, ...)
 	for i, b in pairs{...} do
 		assert(a==b)
 	end
 	return true
 end
-]]
+
 context("Initialization", function()
 	test("Can use open redis connection", function()
         local redis = newr()
@@ -87,8 +91,7 @@ context("Indexing", function()
 			key="testindexing:%s",
 			index = {"i1","i2", i3="hash"}
 		}, newr())
-
-
+		
 		local findme=math.random(1,300)
 		local find_id, findey
 		for i=1, 300 do
@@ -103,5 +106,26 @@ context("Indexing", function()
 		for i, v in pairs(res[1]) do
 			assert_equal(tostring(v), tostring(findey[i]))
 		end
+	end)
+end)
+
+context("References", function()
+	test("Making a reference", function()
+		local r = newr()
+		local Moo = lohm.new({key="moo:%s"}, r)
+		print(Moo)
+		local Thing = lohm.new({
+			key="thing:%s",
+			attributes = {
+				moo = lohm.reference.new(Moo)
+			}
+		}, r)
+		
+		local t = Thing:new{ foo="bar" }
+		local m = Moo:new({ bar="baz" }):save()
+		t.moo = m
+		t:save()
+
+		local m1 = Moo:find(m:getId())
 	end)
 end)

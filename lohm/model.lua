@@ -3,6 +3,7 @@ local function I(...)
 end
 local Datum = require "lohm.datum"
 local Index = require "lohm.index"
+local ref = require "lohm.reference"
 local next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack = next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack
 local print = print
 module "lohm.model"
@@ -147,6 +148,14 @@ do
 
 		fromSet = function(self, setKey, maxResults, offset, descending, lexicographic)
 			return fromSort_general(self, setKey, nil, maxResults, offset, descending, lexicographic)
+		end,
+
+		modelOf = function(self, obj)
+			if type(obj)=='table' and obj.getModel then
+				local s, res, err = pcall(obj.getModel, obj)
+				return s and res==self, err
+			end
+			return false
 		end
 	}}
 end
@@ -176,11 +185,10 @@ function new(arg, redisconn)
 		end
 	end
 	
-	local newobject = Datum.new(object, model)
+	local newobject = Datum.new(object, model, arg.attributes)
 	model.new = function(self, res, id)
 		return newobject(res or {}, id)
 	end
 
-	
 	return setmetatable(model, modelmeta)
 end
