@@ -3,7 +3,7 @@ local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack
 
 local debug = debug
 local function I(...) return ... end
-module "lohm.datum"
+module "lohm.object"
 
 function new(prototype, model, attributes)
 	local ids = setmetatable({}, { __mode='k'})
@@ -47,7 +47,7 @@ function new(prototype, model, attributes)
 
 
 
-	local datum_prototype = {
+	local object_prototype = {
 		setId = function(self, id)
 			if not ids[self] then
 				ids[self]=id
@@ -177,8 +177,8 @@ function new(prototype, model, attributes)
 	}
 
 	--TODO: should find a better way to do this. metatable metatables aren't quite as good a solution as I had hoped.
-	local function datum_ondemand_loader(self, attr)
-		local proto = datum_prototype[attr]
+	local function object_ondemand_loader(self, attr)
+		local proto = object_prototype[attr]
 		if proto then
 			return proto
 		else
@@ -194,18 +194,18 @@ function new(prototype, model, attributes)
 	
 	--merge that shit. aww yeah.
 	for i, v in pairs(prototype or {}) do
-		if not datum_prototype[i] then
-			datum_prototype[i]=v
+		if not object_prototype[i] then
+			object_prototype[i]=v
 		else
 			error(("%s is a built-in %s, and cannot be overridden by a custom object prototype... yet."):format(i, type(v)))
 		end
 	end
 	
-	local datum_meta = { __index = datum_ondemand_loader }
+	local object_meta = { __index = object_ondemand_loader }
 
 	--return a factory.
 	return function(data, id)
-		local obj =  setmetatable(data or {}, datum_meta)
+		local obj =  setmetatable(data or {}, object_meta)
 		if(id) then
 			obj:setId(id)
 			customattr(obj, 'load')

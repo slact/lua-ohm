@@ -1,7 +1,7 @@
 local function I(...)
 	return ...
 end
-local Datum = require "lohm.datum"
+local Object = require "lohm.object"
 local Index = require "lohm.index"
 local ref = require "lohm.reference"
 local next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack = next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack
@@ -162,7 +162,7 @@ end
 
 function new(arg, redisconn)
 
-	local model, object = arg.model or {}, arg.datum or arg.object or {}
+	local model, object = arg.model or {}, arg.object or {}
 	assert(type(arg.key)=='string', "Redis object Must. Have. Key.")
 	assert(redisconn, "Valid redis connection needed")
 	assert(redisconn:ping())
@@ -185,7 +185,7 @@ function new(arg, redisconn)
 		end
 	end
 	
-	local newobject = Datum.new(object, model, arg.attributes)
+	local newobject = Object.new(object, model, arg.attributes)
 	model.new = function(self, res, id)
 		return newobject(res or {}, id)
 	end
