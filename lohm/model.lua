@@ -16,7 +16,7 @@ local newId = {
 	end,
 
 	uuid = (function()
-		local res, uuid, err = pcall(require "uuid")
+		local res, uuid, err = pcall(require, "uuid")
 		if not res then 
 			return function()
 				error("UUID lua module not found.")
