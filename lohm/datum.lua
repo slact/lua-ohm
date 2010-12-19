@@ -132,7 +132,7 @@ function new(prototype, model, attributes)
 			end
 		end,
 
-		delete_coroutine = function(self, r) 
+		delete_coroutine = function(self) 
 			--get old values 
 			local key, id = self:getKey(), self:getId()
 			--NOTE: this is probably inefficient. do it better.
@@ -208,6 +208,7 @@ function new(prototype, model, attributes)
 		local obj =  setmetatable(data or {}, datum_meta)
 		if(id) then
 			obj:setId(id)
+			customattr(obj, 'load')
 		end
 		return obj
 	end

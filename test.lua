@@ -139,7 +139,6 @@ context("References", function()
 	test("Making a reference", function()
 		local r = newr()
 		local Moo = lohm.new({key="moo:%s"}, r)
-		print(Moo)
 		local Thing = lohm.new({
 			key="thing:%s",
 			attributes = {
@@ -153,8 +152,6 @@ context("References", function()
 		t:save()
 
 		local t1 = Thing:find(t:getId())
-		debug.print(t1)
-		--debug.print("M!", m1)
-		debug.print(type(t1.moo))
+		assert_equal(t1.moo:getId(), '1')
 	end)
 end)

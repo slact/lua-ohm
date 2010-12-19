@@ -8,10 +8,12 @@ end)
 function new(model, cascade)
 	return {
 		load = function(redis, self, key, attr)
-			print("LOADING")
 			local id, err = redis:hget(key, attr)
 			if not id then return nil, err end
 			local res =  model:find(id)
+			if res then
+				self[attr]=res
+			end
 			return res
 		end, 
 
