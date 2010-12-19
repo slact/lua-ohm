@@ -1,4 +1,4 @@
-local print = print
+local print, debug = print, debug
 local assert, coroutine, table = assert, coroutine, table 
 module ("lohm.reference", function(t)
 	setmetatable(t, { __call = function(...) return t.new(...) end })
@@ -8,6 +8,7 @@ end)
 function new(model, cascade)
 	return {
 		load = function(redis, self, key, attr)
+			print("LOADING")
 			local id, err = redis:hget(key, attr)
 			if not id then return nil, err end
 			local res =  model:find(id)
@@ -26,8 +27,7 @@ function new(model, cascade)
 			else
 				coroutine.yield()
 			end
-			print("HEYO")
-			return redis:hset(key, attr, val:getId())
+			redis:hset(key, attr, val:getId())
 		end,
 		
 		delete = function(redis, self, key, attr)

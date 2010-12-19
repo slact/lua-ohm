@@ -22,19 +22,19 @@ function new(prototype, model, attributes)
 			delete=I
 		}
 	end})
-	local function customattr(self, custom)
+	local function customattr(self, custom, these_attributes)
 		local afterYield = {}
 		local key = self:getKey()
-		for attr, fn in pairs(attributes) do
+		for attr, fn in pairs(these_attributes or attributes) do
 			local coro = coroutine.create(fn[custom])
-			assert(coroutine.resume(coro, model.redis, self, rawget(self, attr)))
+			assert(coroutine.resume(coro, model.redis, self, key, attr, rawget(self, attr)))
 			if coroutine.status(coro)=='suspended' then
 				table.insert(afterYield, coro)
 			end
 		end
 		return function(...)
 			for i, coro in pairs(afterYield) do
-				coroutine.resume(coro, ...)
+				assert(coroutine.resume(coro, ...))
 			end
 		end
 	end
@@ -94,25 +94,32 @@ function new(prototype, model, attributes)
 					end
 				end
 				
-				--get the _raw_ attribute values that are being updated and are indexed. While we're at ir, see what custom attributes we need to save
+				local hash_change, custom_change = {}, {}
+				--get the _raw_ attribute values that are being updated and are indexed. While we're at it, see what custom attributes we need to save
 				for k, v in  pairs(change) do
-				
-					if indices[k] and type(v)~='table' then
-						--TODO: hmget will probably be faster
-						old_indexed_attr[k] = r:hget(key, k)
+					local customattr = rawget(attributes, k) --rawget is needed here. so long as attributes' metatable has that fancy default __index
+					if customattr then
+						custom_change[k]=customattr
+					else
+						hash_change[k]=v
+						if indices[k] then
+							--TODO: hmget will probably be faster
+							old_indexed_attr[k] = r:hget(key, k)
+						end
 					end
 				end
-				local after = customattr(self, 'save')
+				
+				local after = customattr(self, 'save', custom_change)
 				coroutine.yield() --MULTI
 				after()
 				--update indices
-				for k, v in pairs(change) do
+				for k, v in pairs(hash_change) do
 					local index = indices[k]
 					if index then
 						indices[k]:update(r, id, v, old_indexed_attr[k])
 					end
 				end
-				r:hmset(key, change)
+				r:hmset(key, hash_change)
 			end
 		end,
 		
@@ -177,7 +184,6 @@ function new(prototype, model, attributes)
 		else
 			local key = self:getKey()
 			if key then
-				debug.print(getmetatable(attributes), attr)
 				local res = attributes[attr].load(model.redis, self, key, attr)
 				self[attr]=res
 				return res

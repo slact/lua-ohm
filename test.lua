@@ -149,9 +149,7 @@ context("References", function()
 		
 		local t = Thing:new{ foo="bar" }
 		local m = Moo:new({ bar="baz" }):save()
-		debug.print("EM", m)
 		t.moo = m
-		debug.print(t)
 		t:save()
 
 		local t1 = Thing:find(t:getId())
