@@ -10,11 +10,13 @@ function new(model, cascade)
 		load = function(redis, self, key, attr)
 			local id, err = redis:hget(key, attr)
 			if not id then return nil, err end
-			local res =  model:find(id)
+			local res, err =  model:find(id)
 			if res then
 				self[attr]=res
+				return res
+			else
+				error(("Failed loading %s: %s."):format(model:key(id), err))
 			end
-			return res
 		end, 
 
 		save = function(redis, self, key, attr, val)
