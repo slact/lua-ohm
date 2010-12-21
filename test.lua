@@ -39,7 +39,7 @@ local function newr()
 	redis:flushdb()
 	return redis
 end
-
+--[[
 function assert_type(var, typ)
 	return assert(type(var)==typ, "wrong type")
 end
@@ -64,7 +64,7 @@ function assert_equal(a, ...)
 	end
 	return true
 end
-
+--  ]]
 context("Initialization", function()
 	test("Can use open redis connection", function()
         local redis = newr()
@@ -153,5 +153,44 @@ context("References", function()
 
 		local t1 = Thing:find(t:getId())
 		assert_equal(t1.moo:getId(), '1')
+
+	end)
+
+	test("Deletion", function()
+		local r = newr()
+		local Foo = lohm.new({key="foo:%s"}, r)
+		local Bar = lohm.new({key="bar:%s", 
+			attributes={ 
+				foo = lohm.reference(Foo) 
+			}
+		}, r)
+		
+		local HardBar = lohm.new({key="hardBar:%s",
+			attributes = {
+				foo = lohm.reference(Foo, true)
+			}
+		}, r)
+
+		local foo1 = Foo:new({attr="foo1"}):save()
+		local foo2 = Foo:new({attr="foo2"}):save()
+		local bar = Bar:new({foo=foo1, bar=11}):save()
+
+		foo2.test="test"
+		local hardBar = HardBar:new({foo=foo2, bar=9}):save()
+
+		local ids = {}
+		for i, v in pairs{foo1=foo1, foo2=foo2, hardBar=hardBar, bar = bar} do
+			ids[i]=v:getId()
+		end
+		assert_equal(Bar:find(ids.bar):getId(), bar:getId())
+		bar:delete()
+		assert_true(not Bar:find(ids.bar))
+		assert(Foo:find(ids.foo1))
+		assert_equal(HardBar:find(ids.hardBar).foo.attr, foo2.attr)
+		hardBar:delete()
+		
+		assert_true(not HardBar:find(ids.hardBar))
+		assert_true(not Foo:find(ids.foo2))
+		assert(Foo:find(ids.foo1):getId())
 	end)
 end)

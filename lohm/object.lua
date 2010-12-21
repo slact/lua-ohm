@@ -119,7 +119,9 @@ function new(prototype, model, attributes)
 						indices[k]:update(r, id, v, old_indexed_attr[k])
 					end
 				end
-				r:hmset(key, hash_change)
+				if next(hash_change) then --make sure changeset is non-empty
+					r:hmset(key, hash_change)
+				end
 			end
 		end,
 		
@@ -137,17 +139,17 @@ function new(prototype, model, attributes)
 			local key, id = self:getKey(), self:getId()
 			--NOTE: this is probably inefficient. do it better.
 			return function(r)
-				local current = {}
+				local current_indexed = {}
 				if #indexed>0 then
-					current = r:hmget(key, indexed)
+					current_indexed = r:hmget(key, indexed)
 				end
 				local after = customattr(self, 'delete')
 				coroutine.yield()
 				--MULTI
 				after()
 				local id = self:getId()
-				for attr, val in pairs(current) do
-					indices[attr]:update(selfr, id, nil, val)
+				for attr, val in pairs(current_indexed) do
+					indices[attr]:update(self, id, nil, val)
 				end
 				
 				r:del(key)

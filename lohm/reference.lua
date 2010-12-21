@@ -1,7 +1,7 @@
-local print, debug = print, debug
+local print, debug, type = print, debug, type
 local assert, coroutine, table = assert, coroutine, table 
 module ("lohm.reference", function(t)
-	setmetatable(t, { __call = function(...) return t.new(...) end })
+	setmetatable(t, { __call = function(self, ...) return t.new(...) end })
 	return t
 end)
 
@@ -20,23 +20,28 @@ function new(model, cascade)
 		end, 
 
 		save = function(redis, self, key, attr, val)
+			assert(model:modelOf(val), ("Not a lohm object, or object of unexpected model (type %s)."):format(type(val)))
 			if(cascade) then
-				assert(model:modelOf(val), "Wrong object.")
-				local c = coroutine.create(self:save_coroutine())
-				coroutine.resume(c, redis)
+				local c = coroutine.create(val:save_coroutine())
+				assert(coroutine.resume(c, redis))
 				coroutine.yield()
 				if(coroutine.status(c)=='suspended') then
-					coroutine.resume(c)
+					assert(coroutine.resume(c))
 				end
 			else
 				coroutine.yield()
 			end
-			redis:hset(key, attr, val:getId())
+			assert(redis:hset(key, attr, val:getId()))
 		end,
 		
 		delete = function(redis, self, key, attr)
 			if cascade and model:modelOf(self[attr]) then
-				return self:delete_coroutine()
+				local c = coroutine.create(self[attr]:delete_coroutine())
+				assert(coroutine.resume(c, redis))
+				coroutine.yield()
+				if(coroutine.status(c)=='suspended') then
+					assert(coroutine.resume(c))
+				end
 			end
 		end
 	}
