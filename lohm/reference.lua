@@ -122,9 +122,9 @@ function many(model, cascade)
 				end
 			end
 			for i,obj in pairs(newset) do
-				debug.print(redis:sadd(setKey, obj:getId()))
+				redis:sadd(setKey, obj:getId())
 			end
-			if newKey then debug.print(redis:hset(key, attr, setId)) end
+			if newKey then redis:hset(key, attr, setId) end
 		end, 
 		
 		delete = function(redis, self, key, attr)
