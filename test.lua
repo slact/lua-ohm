@@ -39,7 +39,7 @@ local function newr()
 	redis:flushdb()
 	return redis
 end
---[[
+
 function assert_type(var, typ)
 	return assert(type(var)==typ, "wrong type")
 end
@@ -64,7 +64,7 @@ function assert_equal(a, ...)
 	end
 	return true
 end
---  ]]
+
 context("Initialization", function()
 	test("Can use open redis connection", function()
         local redis = newr()
@@ -142,7 +142,7 @@ context("References", function()
 		local Thing = lohm.new({
 			key="thing:%s",
 			attributes = {
-				moo = lohm.reference.new(Moo)
+				moo = lohm.reference.one(Moo)
 			}
 		}, r)
 		
@@ -192,5 +192,26 @@ context("References", function()
 		assert_true(not HardBar:find(ids.hardBar))
 		assert_true(not Foo:find(ids.foo2))
 		assert(Foo:find(ids.foo1):getId())
+	end)
+
+	test("One-to-many references", function()
+		local r = newr()
+		local Bar = lohm({key="bar:%s"}, r)
+		local Foo = lohm({
+			key="foo:%s",
+			attributes= {
+				manyBar=lohm.reference.many(Bar),
+				oneBar=lohm.reference.one(Bar)
+			}
+		}, r)
+
+		local bars = {}
+		for i=1, 20 do
+			local bar = Bar:new{woo=i}:save()
+			table.insert(bars, bar)
+		end
+
+		local foo = Foo:new{oneBar = Bar:new({yes="no"}):save(), manyBar = bars}
+		foo:save()
 	end)
 end)

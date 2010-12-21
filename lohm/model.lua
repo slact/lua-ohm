@@ -55,7 +55,7 @@ do
 		end
 	end
 	
-	for i, bits in pairs{32,64,128,256,1024} do
+	for i, bits in pairs{64,160,256,1024} do
 		local b = bits
 		newId["random" .. tostring(bits)] = hexstr and function()
 			return hexstr(b)
