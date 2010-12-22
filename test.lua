@@ -212,6 +212,6 @@ context("References", function()
 		end
 
 		local foo = Foo:new{oneBar = Bar:new({yes="no"}):save(), manyBar = bars}
-		foo:save()
+		assert_equal(foo:save(), foo)
 	end)
 end)
