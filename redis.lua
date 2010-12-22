@@ -234,6 +234,7 @@ function request.multibulk(client, command, ...)
         s_argument = tostring(argument)
         table.insert(buffer, '$' .. #s_argument .. proto_nl .. s_argument .. proto_nl)
     end
+
     request.raw(client, buffer)
 end
 
@@ -244,6 +245,7 @@ local function custom(command, send, parse)
         local has_reply = send(client, command, ...)
         if has_reply == false then return end
         local reply = response.read(client)
+
         if type(reply) == 'table' and reply.queued then
             reply.parser = parse
             return reply
@@ -373,7 +375,7 @@ do
             for i, v in pairs(queued_parsers) do
                 queued_parsers[i]=nil
             end
-            coro = initialize_transaction(client, watch_keys, block)
+            coro = initialize_transaction(client, watch_keys, block, queued_parsers)
             return reply
         end
         transaction_client.watch = function(...)
@@ -402,16 +404,18 @@ do
     local function transaction(client, watch_keys, coroutine_block, retry)
         local queued_parsers, replies = {}, {}
         local coro = initialize_transaction(client, watch_keys, coroutine_block, queued_parsers)
+
         local success, retval = assert(coroutine.resume(coro))
         
         if #queued_parsers == 0 then 
             client:discard()
             return replies 
         end
-        local raw_replies, err = client:exec()
+
+        local raw_replies = client:exec()
         if not raw_replies then
             if (retry or 0) <= 0 then
-                error ("MULTI/EXEC transaction aborted by the server: " .. (err or ""))
+                error "MULTI/EXEC transaction aborted by the server"
             else
                 --we're not quite done yet
                 return transaction(client, watch_keys, coroutine_block, retry-1)
@@ -434,11 +438,10 @@ do
         else
             error("Invalid parameters for redis transaction.")
         end
-        return nil or transaction(client, watch_keys, function(r, ...)
+        return nil or transaction(client, watch_keys, function(client, ...)
             coroutine.yield()
-			r:set("foobar","baz")
-            return block(r, ...) --can't wrap this in pcall because we're in a coroutine.
-        end, 2)
+            return block(client, ...) --can't wrap this in pcall because we're in a coroutine.
+        end)
     end
 
     client_prototype.check_and_set = function(client, watch_keys, block1, block2)
@@ -457,7 +460,7 @@ do
                 return block2(client, unpack(res))
             end
         end
-        return transaction(client, watch_keys, block, #watch_keys > 0 and 10 or 0)
+        return transaction(client, watch_keys, block, 10)
     end
 end
 -- ############################################################################
