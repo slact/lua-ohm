@@ -40,29 +40,31 @@ local function newr()
 	return redis
 end
 
-function assert_type(var, typ)
-	return assert(type(var)==typ, "wrong type")
-end
-
-function assert_true(...)
-	for i, v in pairs{...} do
-		assert(v and v)
+if not telescope then
+	function assert_type(var, typ)
+		return assert(type(var)==typ, "wrong type")
 	end
-end
 
-function context(lbl, tests)
-	return tests()
-end
-
-function test(lbl, test)
-	return test()
-end
-
-function assert_equal(a, ...)
-	for i, b in pairs{...} do
-		assert(a==b)
+	function assert_true(...)
+		for i, v in pairs{...} do
+			assert(v and v)
+		end
 	end
-	return true
+
+	function context(lbl, tests)
+		return tests()
+	end
+
+	function test(lbl, test)
+		return test()
+	end
+
+	function assert_equal(a, ...)
+		for i, b in pairs{...} do
+			assert(a==b)
+		end
+		return true
+	end
 end
 
 context("Initialization", function()
