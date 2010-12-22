@@ -22,12 +22,12 @@ function new(prototype, model, attributes)
 			delete=I
 		}
 	end})
-	local function customattr(self, custom, these_attributes)
+	local function customattr(self, redis, custom, these_attributes)
 		local afterYield = {}
 		local key = self:getKey()
 		for attr, fn in pairs(these_attributes or attributes) do
 			local coro = coroutine.create(fn[custom])
-			assert(coroutine.resume(coro, model.redis, self, key, attr, rawget(self, attr)))
+			assert(coroutine.resume(coro, redis, self, key, attr, rawget(self, attr)))
 			if coroutine.status(coro)=='suspended' then
 				table.insert(afterYield, coro)
 			end
@@ -109,7 +109,7 @@ function new(prototype, model, attributes)
 					end
 				end
 				
-				local after = customattr(self, 'save', custom_change)
+				local after = customattr(self, r, 'save', custom_change)
 				coroutine.yield() --MULTI
 				after()
 				--update indices
@@ -143,7 +143,7 @@ function new(prototype, model, attributes)
 				if #indexed>0 then
 					current_indexed = r:hmget(key, indexed)
 				end
-				local after = customattr(self, 'delete')
+				local after = customattr(self, r, 'delete')
 				coroutine.yield()
 				--MULTI
 				after()
@@ -210,7 +210,7 @@ function new(prototype, model, attributes)
 		local obj =  setmetatable(data or {}, object_meta)
 		if(id) then
 			obj:setId(id)
-			customattr(obj, 'load')
+			customattr(obj, model.redis, 'load')
 		end
 		return obj
 	end
