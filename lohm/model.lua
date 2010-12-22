@@ -5,7 +5,7 @@ local Object = require "lohm.object"
 local Index = require "lohm.index"
 local ref = require "lohm.reference"
 local next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack = next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack
-local print = print
+local print, debug = print, debug
 module "lohm.model"
 
 -- unique identifier generators
@@ -75,7 +75,10 @@ do
 			limit = maxResults and { offset or 0, maxResults }
 		})
 		if type(res)=='table' and res.queued==true then
-			res, err = coroutine.yield()
+			res, newself = coroutine.yield()
+			if type(newself)=='table' then
+				self = newself
+			end
 		end
 		if res then
 			for i, id in pairs(res) do
@@ -83,7 +86,7 @@ do
 			end
 			return res
 		else
-			return nil, err or "unexpected thing cryptically happened..."
+			return nil, "Sort results missing... It's probably your fault."
 		end
 	end
 	
@@ -112,7 +115,18 @@ do
 				return nil, "Not found."
 			end
 		end,
-
+		
+		findByIdDelayed = function(self, id)
+			local key = self:key(id)
+			if not key then return 
+				nil, "Nothing to look for" 
+			end
+			local res, err = self.redis:hgetall(key)
+			return function(hash)
+				return self:new(hash, id)
+			end
+		end,
+		
 		findByAttr = function(self, arg, limit, offset)
 			local indices = self.indices
 			local sintersect = {}
@@ -156,6 +170,10 @@ do
 				return s and res==self, err
 			end
 			return false
+		end,
+
+		withRedis = function(self, redisClient, callback)
+			return callback(setmetatable({redis=redisClient}, {__index=self}))
 		end
 	}}
 end

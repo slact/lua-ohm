@@ -215,5 +215,11 @@ context("References", function()
 
 		local foo = Foo:new{oneBar = Bar:new({yes="no"}):save(), manyBar = bars}
 		assert_equal(foo:save(), foo)
+
+		local foo_take2 = Foo:find(foo:getId())
+		assert_equal(foo_take2:getId(), foo:getId())
+		for i,v in pairs(foo_take2.manyBar) do
+			assert_equal(tostring(v.woo), tostring(bars[tonumber(v.woo)].woo))
+		end
 	end)
 end)

@@ -404,9 +404,10 @@ do
     local function transaction(client, watch_keys, coroutine_block, retry)
         local queued_parsers, replies = {}, {}
         local coro = initialize_transaction(client, watch_keys, coroutine_block, queued_parsers)
-
-        local success, retval = assert(coroutine.resume(coro))
-        
+		
+		if coroutine.status(coro)=='suspended' then
+			assert(coroutine.resume(coro))
+		end
         if #queued_parsers == 0 then 
             client:discard()
             return replies 

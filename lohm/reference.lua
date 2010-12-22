@@ -1,4 +1,4 @@
-local print, debug, type = print, debug, type
+local print, debug, type, error = print, debug, type, error
 local assert, coroutine, table, pairs, ipairs = assert, coroutine, table, pairs, ipairs
 local tcopy = function(t)
 	local res = {}
@@ -60,20 +60,34 @@ function many(model, cascade)
 	local setId
 	return {
 		load = function(redis, self, key, attr)
-			local setId, err = redis:hget(key, attr)
 			if not setId then return nil, err end
-			local smembers = assert(redis:smembers(id))
-			oldset = {}
-			for i, v in pairs(smembers) do
-				oldset[v]=true
+			local res, err = {}, nil
+			local finishFindById = {}
+			local results, err = redis:check_and_set(key, function(r)
+				if not setId then setId=r:hget(key, attr) end
+				if not setId then return end --no set here.
+				local setKey = keyf:format(setId)
+				r:watch(setKey)
+				finishFromSetIds = assert(r:smembers(setKey))
+				coroutine.yield()
+				model:withRedis(r, function(model)
+					for i, id in ipairs(finishFromSetIds) do
+						table.insert(finishFindById, model:findByIdDelayed(id))
+					end
+				end)
+			end)
+			table.remove(results, 1)
+			table.remove(results, 1)
+			for i, v in ipairs(results) do
+				results[i]=finishFindById[i](v)
 			end
-			if res then
-				self[attr]=res
-				return res
+			if results then
+				self[attr]=results
+				return results
 			else
-				error(("Failed loading set of %s: %s."):format(model:key(id), err))
+				error(("Failed to load set %s: %s."):format(keyf:format(setId or "<?>"), err or "(?)"))
 			end
-		end, 
+		end,
 		
 		save = function(redis, self, key, attr, val)
 			--this is gonna get a little messy.
@@ -86,7 +100,7 @@ function many(model, cascade)
 			local setKey = keyf:format(setId)
 			redis:watch(setKey) --watch this one, too
 			local oldset, newset = {}, {}
-			for i, v in pairs(assert(redis:smembers(setId))) do
+			for i, v in pairs(assert(redis:smembers(setKey))) do
 				oldset[v]=true
 			end
 			for i,v in pairs(val) do
@@ -98,7 +112,7 @@ function many(model, cascade)
 				for i, v in pairs(oldset) do
 					if not newset[i] then
 						local obj = assert(model:findById(i))
-						local c = coroutine.create(obj:delete_coroutine())
+						local c = coroutine.create(obj:save_coroutine())
 						assert(coroutine.resume(c, redis))
 						table.insert(coros, c)
 					end
