@@ -193,16 +193,18 @@ function new(arg, redisconn)
 
 	model.indices = {}
 	local indices = arg.index or arg.indices
-	if indices and #indices>0 then
+	if indices and next(indices) then
 		local defaultIndex = Index:getDefault()
 		for attr, indexType in pairs(indices) do
+			print(attr, type(attr), indexType)
 			if type(attr)~="string" then 
 				attr, indexType = indexType, defaultIndex
 			end
+			print(attr)
 			model.indices[attr] = Index:new(indexType, model, attr)
 		end
 	end
-	
+	debug.print(model.indices)
 	local newobject = Object.new(object, model, arg.attributes)
 	model.new = function(self, res, id)
 		return newobject(res or {}, id)
