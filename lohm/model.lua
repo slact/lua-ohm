@@ -5,7 +5,6 @@ local Object = require "lohm.object"
 local Index = require "lohm.index"
 local ref = require "lohm.reference"
 local next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack = next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack
-local print, debug = print, debug
 module "lohm.model"
 
 -- unique identifier generators
@@ -196,15 +195,12 @@ function new(arg, redisconn)
 	if indices and next(indices) then
 		local defaultIndex = Index:getDefault()
 		for attr, indexType in pairs(indices) do
-			print(attr, type(attr), indexType)
 			if type(attr)~="string" then 
 				attr, indexType = indexType, defaultIndex
 			end
-			print(attr)
 			model.indices[attr] = Index:new(indexType, model, attr)
 		end
 	end
-	debug.print(model.indices)
 	local newobject = Object.new(object, model, arg.attributes)
 	model.new = function(self, res, id)
 		return newobject(res or {}, id)
