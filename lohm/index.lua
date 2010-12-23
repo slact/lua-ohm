@@ -1,14 +1,16 @@
 local print, type, assert, pcall, require, table, tostring, pairs, ipairs, setmetatable = print, type, assert, pcall, require, table, tostring, pairs, ipairs, setmetatable
 local error = error
-module "lohm.index"
+module("lohm.index", package.seeall)
 local indexf = "lohm.index:%s:%s:%%s"
 
 local indices = {}
 
 --hash index: lookup by hashed value
 do
-	local s,  hash = pcall(require, "sha1")
-	if not s then
+	local s,  sha1 = pcall(require, "sha1")
+	if s then
+		hash = sha1.digest
+	else
 		local s, crypto = pcall(require, "crypto")
 		if not s then 
 			error("Can't find a sha1 library (tried sha1 (lmd5) and crypto (LuaCrypto))")
