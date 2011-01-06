@@ -1,10 +1,11 @@
 local function I(...)
 	return ...
 end
-local Object = require "lohm.object"
+local Data = require "lohm.data"
 local Index = require "lohm.index"
 local ref = require "lohm.reference"
 local print = print
+local debug = debug
 local next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack = next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack
 module "lohm.model"
 
@@ -209,9 +210,13 @@ function new(arg, redisconn)
 			model.indices[attr] = Index:new(indexType, model, attr)
 		end
 	end
-	local newobject = Object.new(object, model, arg.attributes)
+
+	local newobject = Data[arg.type or "hash"](model, object, arg.attributes)
 	model.new = function(self, res, id)
 		return newobject(res or {}, id)
+	end
+	model.load = function(self, id)
+		return newobject(nil, id, true)
 	end
 
 	return setmetatable(model, modelmeta)

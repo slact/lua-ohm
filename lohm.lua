@@ -1,6 +1,14 @@
 local Model = require "lohm.model"
+
 module ("lohm", function(t)
-	setmetatable(t, { __call = function(self, ...) return t.new(...) end })
+	setmetatable(t, { 
+		__call = function(self, ...) return t.new(...) end,
+		__index = function(self, k)
+			return function(...) 
+				Model.new(k, ...)
+			end
+		end
+	})
 end)
 
 --arguments:

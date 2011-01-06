@@ -3,12 +3,10 @@ local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack
 
 local debug = debug
 local function I(...) return ... end
-module "lohm.object"
+module "lohm.hash"
 
-function new(prototype, model, attributes)
-	local ids = setmetatable({}, { __mode='k'})
-	local keys = setmetatable({}, { __mode='k'})
-	
+function new(model, prototype, attributes)
+
 	--custom attribute stuff
 	attributes = attributes or {}
 	setmetatable(attributes, {__index=function(t,k)
@@ -45,36 +43,9 @@ function new(prototype, model, attributes)
 		table.insert(indexed, index_name)
 	end
 
-	local object_prototype = {
-		setId = function(self, id)
-			if not ids[self] then
-				ids[self]=id
-				keys[self]=model:key(id)
-			else
-				error("Object id is already set (" .. ids[self] .. "). Can't change it -- yet.")
-			end
-			return self
-		end,
-		
-		setKey = function(self, key)
-			--sanity check first
-			return self:setId(self, assert(model.id(key), "That looks like a mighty invalid key"))
-		end,
-		
-		getKey = function(self)
-			return keys[self]
-		end,
-		
-		getId = function(self)
-			return ids[self]
-		end,
-		
-		getModel = function(self)
-			return model
-		end, 
-
+	local hash_prototype = {
 		save_coroutine = function(self, what)
-			local key = keys[self]
+			local key = self:getKey()
 			if not key then
 				local id = model:reserveNextId()
 				self:setId(id)
@@ -127,16 +98,7 @@ function new(prototype, model, attributes)
 				end
 			end
 		end,
-		
-		save = function(self, what)
-			local res, err = model.redis:check_and_set(key, self:save_coroutine(what))
-			if res then
-				return self
-			else 
-				return nil, err
-			end
-		end,
-
+	
 		delete_coroutine = function(self)
 			--get old values 
 			local key, id = self:getKey(), self:getId()
@@ -158,14 +120,7 @@ function new(prototype, model, attributes)
 				r:del(key)
 			end
 		end,
-
-		delete = function(self)
-			local key = assert(self:getKey(), "Cannot delete without a key")
-			local res, err = model.redis:check_and_set(key, self:delete_coroutine())
-			if not res or not res[#res] then error(err) end
-			return self
-		end,
-
+		
 		get = function(self, attr, force)
 			local res = rawget(self, attr)
 			if force or not res then 
@@ -182,8 +137,8 @@ function new(prototype, model, attributes)
 	}
 
 	--TODO: should find a better way to do this. metatable metatables aren't quite as good a solution as I had hoped.
-	local function object_ondemand_loader(self, attr)
-		local proto = object_prototype[attr]
+	local function hash_ondemand_loader(self, attr)
+		local proto = hash_prototype[attr]
 		if proto then
 			return proto
 		else
@@ -199,22 +154,28 @@ function new(prototype, model, attributes)
 	
 	--merge that shit. aww yeah.
 	for i, v in pairs(prototype or {}) do
-		if not object_prototype[i] then
-			object_prototype[i]=v
+		if not hash_prototype[i] then
+			hash_prototype[i]=v
 		else
 			error(("%s is a built-in %s, and cannot be overridden by a custom object prototype... yet."):format(i, type(v)))
 		end
 	end
 	
-	local object_meta = { __index = object_ondemand_loader }
+	local hash_meta = { __index = hash_ondemand_loader }
 
-	--return a factory.
-	return function(data, id)
-		local obj =  setmetatable(data or {}, object_meta)
-		if(id) then
+	--return a factory and the hash prototype
+	return function(data, id, load_now)
+		local obj =  setmetatable(data or {}, hash_meta)
+		if id then
 			obj:setId(id)
+			if load_now then
+				local loaded_data = model.redis:hgetall(obj:getKey())
+				for k, v in pairs(loaded_data) do
+					obj[k]=v
+				end
+			end
 			customattr(obj, model.redis, 'load')
 		end
 		return obj
-	end
+	end, hash_prototype
 end
