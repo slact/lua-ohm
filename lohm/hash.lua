@@ -44,7 +44,7 @@ function new(model, prototype, attributes)
 	end
 
 	local hash_prototype = {
-		save_coroutine = function(self, what)
+		save_transaction = function(self, what)
 			local key = self:getKey()
 			if not key then
 				local id = model:reserveNextId()
@@ -84,7 +84,7 @@ function new(model, prototype, attributes)
 				end
 				
 				local after = customattr(self, r, 'save', custom_change)
-				coroutine.yield() --MULTI
+				r:multi()
 				after()
 				--update indices
 				for k, v in pairs(hash_change) do
@@ -99,7 +99,7 @@ function new(model, prototype, attributes)
 			end
 		end,
 	
-		delete_coroutine = function(self)
+		delete_transaction = function(self)
 			--get old values 
 			local key, id = self:getKey(), self:getId()
 			--NOTE: this is probably inefficient. do it better.
@@ -109,7 +109,7 @@ function new(model, prototype, attributes)
 					current_indexed = r:hmget(key, indexed)
 				end
 				local after = customattr(self, r, 'delete')
-				coroutine.yield()
+				r:multi()
 				--MULTI
 				after()
 				local id = self:getId()

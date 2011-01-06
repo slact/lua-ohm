@@ -29,23 +29,23 @@ function one(model, cascade)
 		save = function(redis, self, key, attr, val)
 			assert(model:modelOf(val), ("Not a lohm object, or object of unexpected model (type %s)."):format(type(val)))
 			if(cascade) then
-				local c = coroutine.create(val:save_coroutine())
+				local c = coroutine.create(val:save_transaction())
 				assert(coroutine.resume(c, redis))
-				coroutine.yield()
+				redis:multi()
 				if(coroutine.status(c)=='suspended') then
 					assert(coroutine.resume(c))
 				end
 			else
-				coroutine.yield()
+				redis:multi()
 			end
 			assert(redis:hset(key, attr, val:getId()))
 		end,
 		
 		delete = function(redis, self, key, attr)
 			if cascade and model:modelOf(self[attr]) then
-				local c = coroutine.create(self[attr]:delete_coroutine())
+				local c = coroutine.create(self[attr]:delete_transaction())
 				assert(coroutine.resume(c, redis))
-				coroutine.yield()
+				redis:multi()
 				if(coroutine.status(c)=='suspended') then
 					assert(coroutine.resume(c))
 				end
@@ -63,13 +63,13 @@ function many(model, cascade)
 			if not setId then return nil, err end
 			local res, err = {}, nil
 			local finishFindById = {}
-			local results, err = redis:check_and_set(key, function(r)
+			local results, err = redis:transaction({cas=true, watch=key}, function(r)
 				if not setId then setId=r:hget(key, attr) end
 				if not setId then return end --no set here.
 				local setKey = keyf:format(setId)
 				r:watch(setKey)
 				finishFromSetIds = assert(r:smembers(setKey))
-				coroutine.yield()
+				r:multi()
 				model:withRedis(r, function(model)
 					for i, id in ipairs(finishFromSetIds) do
 						table.insert(finishFindById, model:findByIdDelayed(id))
@@ -112,14 +112,14 @@ function many(model, cascade)
 				for i, v in pairs(oldset) do
 					if not newset[i] then
 						local obj = assert(model:findById(i))
-						local c = coroutine.create(obj:save_coroutine())
+						local c = coroutine.create(obj:save_transaction())
 						assert(coroutine.resume(c, redis))
 						table.insert(coros, c)
 					end
 				end
 			end
 			
-			coroutine.yield()
+			redis:multi() --same as coroutine.yield()
 			
 			--finish up cascading deletion coroutines.
 			for i, coro in pairs(coros) do
@@ -157,13 +157,13 @@ function many(model, cascade)
 			if cascade then
 				for i,id in pairs(oldmembers) do
 					local obj = assert(model:findById(id))
-					local c = coroutine.create(obj:delete_coroutine())
+					local c = coroutine.create(obj:delete_transaction())
 					assert(coroutine.resume(c, redis))
 					table.insert(coros, c)
 				end
 			end
 
-			coroutine.yield()
+			redis:muti()
 
 			for i, coro in pairs(coros) do
 				if coroutine.status(coro)=='suspended' then

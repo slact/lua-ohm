@@ -34,9 +34,43 @@ local function fire_and_forget(client, command)
     return false
 end
 
-local function zset_range_parse(reply, command, ...)
+local function zset_range_request(client, command, ...)
+    local args, opts = {...}, { }
+
+    if #args >= 1 and type(args[#args]) == 'table' then
+        local options = table.remove(args, #args)
+        if options.withscores then
+            table.insert(opts, 'WITHSCORES')
+        end
+    end
+
+    for _, v in pairs(opts) do table.insert(args, v) end
+    request.multibulk(client, command, args)
+end
+
+local function zset_range_byscore_request(client, command, ...)
+    local args, opts = {...}, { }
+
+    if #args >= 1 and type(args[#args]) == 'table' then
+        local options = table.remove(args, #args)
+        if options.limit then
+            table.insert(opts, 'LIMIT')
+            table.insert(opts, options.limit.offset or options.limit[1])
+            table.insert(opts, options.limit.count or options.limit[2])
+        end
+        if options.withscores then
+            table.insert(opts, 'WITHSCORES')
+        end
+    end
+
+    for _, v in pairs(opts) do table.insert(args, v) end
+    request.multibulk(client, command, args)
+end
+
+local function zset_range_reply(reply, command, ...)
     local args = {...}
-    if #args == 4 and string.lower(args[4]) == 'withscores' then
+    local opts = args[4]
+    if opts and (opts.withscores or string.lower(tostring(opts)) == 'withscores') then
         local new_reply = { }
         for i = 1, #reply, 2 do
             table.insert(new_reply, { reply[i], reply[i + 1] })
@@ -117,15 +151,10 @@ end
 -- ############################################################################
 
 function response.read(client)
-    local res    = client.network.read(client)
-    local prefix = res:sub(1, -#res)
-    local response_handler = protocol.prefixes[prefix]
-
-    if not response_handler then
-        error('unknown response prefix: ' .. prefix)
-    else
-        return response_handler(client, res)
-    end
+    local res = client.network.read(client)
+    local prefix  = res:sub(1, -#res)
+    local handler = assert(protocol.prefixes[prefix], 'unknown response prefix: '..prefix)
+    return handler(client, res)
 end
 
 function response.status(client, data)
@@ -153,14 +182,11 @@ end
 function response.bulk(client, data)
     local str = data:sub(2)
     local len = tonumber(str)
+    assert(len, 'cannot parse ' .. str .. ' as data length')
 
-    if not len then
-        error('cannot parse ' .. str .. ' as data length.')
-    else
-        if len == -1 then return nil end
-        local next_chunk = client.network.read(client, len + 2)
-        return next_chunk:sub(1, -3);
-    end
+    if len == -1 then return nil end
+    local next_chunk = client.network.read(client, len + 2)
+    return next_chunk:sub(1, -3);
 end
 
 function response.multibulk(client, data)
@@ -267,17 +293,25 @@ function command(command, opts)
     end
 end
 
-function define_command(name, opts)
+local define_command_impl = function(target, name, opts)
     local opts = opts or {}
-    commands[string.lower(name)] = custom(
+    target[string.lower(name)] = custom(
         opts.command or string.upper(name),
         opts.request or request.multibulk,
         opts.response or nil
     )
 end
 
+function define_command(name, opts)
+    define_command_impl(commands, name, opts)
+end
+
+local undefine_command_impl = function(target, name)
+    target[string.lower(name)] = nil
+end
+
 function undefine_command(name)
-    commands[string.lower(name)] = nil
+    undefine_command_impl(commands, name)
 end
 
 -- ############################################################################
@@ -290,16 +324,11 @@ client_prototype.raw_cmd = function(client, buffer)
 end
 
 client_prototype.define_command = function(client, name, opts)
-    local opts = opts or {}
-    client[string.lower(name)] = custom(
-        opts.command or string.upper(name),
-        opts.request or request.multibulk,
-        opts.response or nil
-    )
+    define_command_impl(client, name, opts)
 end
 
 client_prototype.undefine_command = function(client, name)
-    client[string.lower(name)] = nil
+    undefine_command_impl(client, name)
 end
 
 client_prototype.pipeline = function(client, block)
@@ -361,21 +390,36 @@ do
     local function identity(...) return ... end
     local emptytable = {}
 
-    local function initialize_transaction(client, watch_keys, block, queued_parsers)
+    local function initialize_transaction(client, options, block, queued_parsers)
         local coro = coroutine.create(block)
-        for i, key in pairs(watch_keys) do
-            client:watch(key)
+
+        if options.watch then
+            local watch_keys = {}
+            for _, key in pairs(options.watch) do
+                table.insert(watch_keys, key)
+            end
+            if #watch_keys > 0 then
+                client:watch(unpack(watch_keys))
+            end
         end
 
         local transaction_client = setmetatable({}, {__index=client})
+        transaction_client.exec  = function(...)
+            error('cannot use EXEC inside a transaction block')
+        end
+        transaction_client.multi = function(...)
+            coroutine.yield()
+        end
+
         assert(coroutine.resume(coro, transaction_client))
 
+        transaction_client.multi = nil
         transaction_client.discard = function(...)
             local reply = client:discard()
             for i, v in pairs(queued_parsers) do
                 queued_parsers[i]=nil
             end
-            coro = initialize_transaction(client, watch_keys, block, queued_parsers)
+            coro = initialize_transaction(client, options, block, queued_parsers)
             return reply
         end
         transaction_client.watch = function(...)
@@ -401,69 +445,76 @@ do
         return coro
     end
 
-    local function transaction(client, watch_keys, coroutine_block, retry)
+    local function transaction(client, options, coroutine_block, attempts)
         local queued_parsers, replies = {}, {}
-        local coro = initialize_transaction(client, watch_keys, coroutine_block, queued_parsers)
-		
-		if coroutine.status(coro)=='suspended' then
-			assert(coroutine.resume(coro))
-		end
-        if #queued_parsers == 0 then 
+        local retry = tonumber(attempts) or tonumber(options.retry) or 2
+        local coro = initialize_transaction(client, options, coroutine_block, queued_parsers)
+
+        local success, retval
+        if coroutine.status(coro) == 'suspended' then
+            success, retval = coroutine.resume(coro)
+        else
+            -- do not fail if the coroutine has not been resumed (missing t:multi() with CAS)
+            success, retval = true, 'empty transaction'
+        end
+        if #queued_parsers == 0 or not success then
             client:discard()
-            return replies 
+            assert(success, retval)
+            return replies, 0
         end
 
         local raw_replies = client:exec()
         if not raw_replies then
             if (retry or 0) <= 0 then
-                error "MULTI/EXEC transaction aborted by the server"
+                error("MULTI/EXEC transaction aborted by the server")
             else
                 --we're not quite done yet
-                return transaction(client, watch_keys, coroutine_block, retry-1)
+                return transaction(client, options, coroutine_block, retry - 1)
             end
         end
-        
+
         for i, parser in pairs(queued_parsers) do
             table.insert(replies, i, parser(raw_replies[i]))
         end
 
-        return replies
-   end
+        return replies, #queued_parsers
+    end
 
     client_prototype.transaction = function(client, arg1, arg2)
-       local watch_keys, block
+        local options, block
         if not arg2 then
-            watch_keys, block = {}, arg1
+            options, block = {}, arg1
         elseif arg1 then --and arg2, implicitly
-            watch_keys, block = type(arg1)=="table" and arg1 or { arg1 }, arg2
+            options, block = type(arg1)=="table" and arg1 or { arg1 }, arg2
         else
             error("Invalid parameters for redis transaction.")
         end
-        return nil or transaction(client, watch_keys, function(client, ...)
-            coroutine.yield()
-            return block(client, ...) --can't wrap this in pcall because we're in a coroutine.
-        end)
-    end
 
-    client_prototype.check_and_set = function(client, watch_keys, block1, block2)
-        local block
-        if type(watch_keys) ~= 'table' then
-            watch_keys = { watch_keys }
+        if not options.watch then
+            watch_keys = { }
+            for i, v in pairs(options) do
+                if tonumber(i) then
+                    table.insert(watch_keys, v)
+                    options[i] = nil
+                end
+            end
+            options.watch = watch_keys
+        elseif not (type(options.watch) == 'table') then
+            options.watch = { options.watch }
         end
-        assert(type(block1)=="function", "Check-and-set operation expects a function parameter")
-        if not block2 then
-            block = block1
-        else --we were given two blocks
-            assert(type(block2)=="function", "Check-and-set operation expects third parameter, if present, to be a function.")
-            block = function(client)
-                local res = { block1(client) }
-                coroutine.yield()
-                return block2(client, unpack(res))
+
+        if not options.cas then
+            local tx_block = block
+            block = function(client, ...)
+                client:multi()
+                return tx_block(client, ...) --can't wrap this in pcall because we're in a coroutine.
             end
         end
-        return transaction(client, watch_keys, block, 10)
+
+        return transaction(client, options, block)
     end
 end
+
 -- ############################################################################
 
 function connect(...)
@@ -481,9 +532,7 @@ function connect(...)
         else
             local server = uri.parse(select(1, ...))
             if server.scheme then
-                if server.scheme ~= 'redis' then
-                    error('"' .. server.scheme .. '" is an invalid scheme')
-                end
+                assert(server.scheme == 'redis', '"'..server.scheme..'" is an invalid scheme')
                 host, port = server.host, server.port or defaults.port
                 if server.query then
                     for k,v in server.query:gmatch('([-_%w]+)=([-_%w]+)') do
@@ -503,14 +552,9 @@ function connect(...)
         host, port = unpack(args)
     end
 
-    if host == nil then
-        error('please specify the address of running redis instance')
-    end
-
+    assert(host, 'please specify the address of running redis instance')
     local client_socket = socket.connect(host, tonumber(port))
-    if not client_socket then
-        error('could not connect to ' .. host .. ':' .. port)
-    end
+    assert(client_socket, 'could not connect to ' .. host .. ':' .. port)
     client_socket:setoption('tcp-nodelay', tcp_nodelay)
 
     return create_client(client_prototype, client_socket, commands)
@@ -533,8 +577,8 @@ commands = {
     multi      = command('MULTI'),
     exec       = command('EXEC'),
     discard    = command('DISCARD'),
-    watch      = command('WATCH'),
-    unwatch    = command('UNWATCH'),
+    watch      = command('WATCH'),          -- >= 2.2
+    unwatch    = command('UNWATCH'),        -- >= 2.2
 
     -- commands operating on string values
     set        = command('SET'),
@@ -557,6 +601,11 @@ commands = {
     type       = command('TYPE'),
     append     = command('APPEND'),         -- >= 2.0
     substr     = command('SUBSTR'),         -- >= 2.0
+    strlen     = command('STRLEN'),         -- >= 2.2
+    setrange   = command('SETRANGE'),       -- >= 2.2
+    getrange   = command('GETRANGE'),       -- >= 2.2
+    setbit     = command('SETBIT'),         -- >= 2.2
+    getbit     = command('GETBIT'),         -- >= 2.2
 
     -- commands operating on the key space
     keys       = command('KEYS', {
@@ -587,6 +636,7 @@ commands = {
     expireat  = command('EXPIREAT', { response = toboolean }),
     dbsize    = command('DBSIZE'),
     ttl       = command('TTL'),
+    persist   = command('PERSIST', { response = toboolean }),     -- >= 2.2
 
     -- commands operating on lists
     rpush            = command('RPUSH'),
@@ -602,6 +652,10 @@ commands = {
     rpoplpush        = command('RPOPLPUSH'),
     blpop            = command('BLPOP'),
     brpop            = command('BRPOP'),
+    rpushx           = command('RPUSHX'),           -- >= 2.2
+    lpushx           = command('LPUSHX'),           -- >= 2.2
+    linsert          = command('LINSERT'),          -- >= 2.2
+    brpoplpush       = command('BRPOPLPUSH'),       -- >= 2.2
 
     -- commands operating on sets
     sadd             = command('SADD', { response = toboolean }),
@@ -623,9 +677,22 @@ commands = {
     zadd             = command('ZADD', { response = toboolean }),
     zincrby          = command('ZINCRBY'),
     zrem             = command('ZREM', { response = toboolean }),
-    zrange           = command('ZRANGE', { response = zset_range_parse }),
-    zrevrange        = command('ZREVRANGE', { response = zset_range_parse }),
-    zrangebyscore    = command('ZRANGEBYSCORE'),
+    zrange           = command('ZRANGE', {
+        request  = zset_range_request,
+        response = zset_range_reply,
+    }),
+    zrevrange        = command('ZREVRANGE', {
+        request  = zset_range_request,
+        response = zset_range_reply,
+    }),
+    zrangebyscore    = command('ZRANGEBYSCORE', {
+        request  = zset_range_byscore_request,
+        response = zset_range_reply,
+    }),
+    zrevrangebyscore = command('ZREVRANGEBYSCORE', {              -- >= 2.2
+        request  = zset_range_byscore_request,
+        response = zset_range_reply,
+    }),
     zunionstore      = command('ZUNIONSTORE', { request = zset_store_request }),
     zinterstore      = command('ZINTERSTORE', { request = zset_store_request }),
     zcount           = command('ZCOUNT'),
