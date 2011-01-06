@@ -45,8 +45,6 @@ function new(prototype, model, attributes)
 		table.insert(indexed, index_name)
 	end
 
-
-
 	local object_prototype = {
 		setId = function(self, id)
 			if not ids[self] then
@@ -56,6 +54,11 @@ function new(prototype, model, attributes)
 				error("Object id is already set (" .. ids[self] .. "). Can't change it -- yet.")
 			end
 			return self
+		end,
+		
+		setKey = function(self, key)
+			--sanity check first
+			return self:setId(self, assert(model.id(key), "That looks like a mighty invalid key"))
 		end,
 		
 		getKey = function(self)
@@ -134,7 +137,7 @@ function new(prototype, model, attributes)
 			end
 		end,
 
-		delete_coroutine = function(self) 
+		delete_coroutine = function(self)
 			--get old values 
 			local key, id = self:getKey(), self:getId()
 			--NOTE: this is probably inefficient. do it better.

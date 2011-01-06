@@ -4,6 +4,7 @@ end
 local Object = require "lohm.object"
 local Index = require "lohm.index"
 local ref = require "lohm.reference"
+local print = print
 local next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack = next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack
 module "lohm.model"
 
@@ -186,6 +187,13 @@ function new(arg, redisconn)
 	model.redis = redisconn --presumably an open connection
 
 	local key = arg.key
+	model.keyf = key --format-string for the key
+	
+	local idmatch = key:gsub("([%^%$%(%)%.%[%]%*%+%-%?])", "%%%1") --note that we aren't filtering the % char. because it's used in sprintf. 
+	idmatch = ("^" .. idmatch .. "$"):format("(.*)")
+	model.id = function(self, key)
+		return key:find(idmatch)
+	end
 	model.key = function(self, id)
 		return key:format(id)
 	end
