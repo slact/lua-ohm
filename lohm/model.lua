@@ -95,37 +95,33 @@ do
 		reserveNextId = function(self)
 			return newId.autoincrement(self)
 		end,
-
+		
+		--@return (possibly empty) table of results
 		find = function(self, arg)
 			if type(arg)=="table" then
-				return  self:findByAttr(arg)
+				return self:findByAttr(arg)
 			else
-				return self:findById(arg)
+				local res, err = self:findById(arg)
+				return { res }
 			end
 		end,
 		
+		findOne = function(self, arg)
+			local res, err = self:find(arg)
+			if res and #res>0 then 
+				return res[1] 
+			else
+				return nil, err
+			end
+		end,
+
+		--@return found object or nil
 		findById = function(self, id)
 			local key = self:key(id)
 			if not key then return 
 				nil, "Nothing to look for" 
 			end
-			local res, err = self.redis:hgetall(key)
-			if res and next(res) then
-				return self:new(res, id)
-			else
-				return nil, "Not found."
-			end
-		end,
-		
-		findByIdDelayed = function(self, id)
-			local key = self:key(id)
-			if not key then return 
-				nil, "Nothing to look for" 
-			end
-			local res, err = self.redis:hgetall(key)
-			return function(hash)
-				return self:new(hash, id)
-			end
+			return self:load(id)
 		end,
 		
 		findByAttr = function(self, arg, limit, offset)
@@ -150,7 +146,7 @@ do
 			assert(wrapper(self, key, pattern, maxResults, offset, descending, lexicographic))
 			return wrapper
 		end, 
-
+		
 		fromSort = function(self, ...)
 			return fromSort_general(self, ...)
 		end,

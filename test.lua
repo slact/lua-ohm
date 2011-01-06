@@ -85,7 +85,7 @@ context("Initialization", function()
 			},
 			model={
 				getFirst = function(self)
-					return self:find(1)
+					return self:findOne(1)
 				end
 			}
 		}, newr())
@@ -104,11 +104,11 @@ context("Basic manipulation", function()
 		m:set('barbar','baz'):save()
 		assert(m:getId()==id)
 		
-		local checkM = assert(Model:find(id))
+		local checkM = assert(Model:findOne(id))
 		assert_true( checkM.barbar=="baz" )
 		assert_true( "barbar"==checkM.foo )
 		assert(checkM:delete())
-		local notfound = Model:find(id)
+		local notfound = Model:findOne(id)
 		assert_true(not notfound)
 	end)
 end)
@@ -153,7 +153,7 @@ context("References", function()
 		t.moo = m
 		t:save()
 
-		local t1 = Thing:find(t:getId())
+		local t1 = Thing:findOne(t:getId())
 		assert_equal(t1.moo:getId(), '1')
 
 	end)
@@ -184,16 +184,16 @@ context("References", function()
 		for i, v in pairs{foo1=foo1, foo2=foo2, hardBar=hardBar, bar = bar} do
 			ids[i]=v:getId()
 		end
-		assert_equal(Bar:find(ids.bar):getId(), bar:getId())
+		assert_equal(Bar:findOne(ids.bar):getId(), bar:getId())
 		bar:delete()
-		assert_true(not Bar:find(ids.bar))
-		assert(Foo:find(ids.foo1))
-		assert_equal(HardBar:find(ids.hardBar).foo.attr, foo2.attr)
+		assert_true(not Bar:findOne(ids.bar))
+		assert(Foo:findOne(ids.foo1))
+		assert_equal(HardBar:findOne(ids.hardBar).foo.attr, foo2.attr)
 		hardBar:delete()
 		
-		assert_true(not HardBar:find(ids.hardBar))
-		assert_true(not Foo:find(ids.foo2))
-		assert(Foo:find(ids.foo1):getId())
+		assert_true(not HardBar:findOne(ids.hardBar))
+		assert_true(not Foo:findOne(ids.foo2))
+		assert(Foo:findOne(ids.foo1):getId())
 	end)
 
 	test("One-to-many references", function()
@@ -216,7 +216,7 @@ context("References", function()
 		local foo = Foo:new{oneBar = Bar:new({yes="no"}):save(), manyBar = bars}
 		assert_equal(foo:save(), foo)
 
-		local foo_take2 = Foo:find(foo:getId())
+		local foo_take2 = Foo:findOne(foo:getId())
 		assert_equal(foo_take2:getId(), foo:getId())
 		for i,v in pairs(foo_take2.manyBar) do
 			assert_equal(tostring(v.woo), tostring(bars[tonumber(v.woo)].woo))

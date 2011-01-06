@@ -56,7 +56,7 @@ function new(model, prototype, attributes)
 			end
 			assert(key, "Tried to save data without a key or key assignment scheme. You can't do that.")
 			local id = self:getId()
-			--NOTE: this is probably inefficient. do it better.
+			--TODO: this is probably inefficient. do it better.
 			return function(r)
 				--take care of indexing
 				local change, old_indexed_attr = {}, {}
@@ -169,9 +169,23 @@ function new(model, prototype, attributes)
 		if id then
 			obj:setId(id)
 			if load_now then
-				local loaded_data = model.redis:hgetall(obj:getKey())
-				for k, v in pairs(loaded_data) do
-					obj[k]=v
+				local loaded_data, err = model.redis:hgetall(obj:getKey())
+				if loaded_data.queued==true then
+					--delayed
+					return function(data)
+						for k, v in pairs(data) do
+							obj[k]=v
+						end
+						--BUG waiting to happen: custom attributes are not loaded atomically with the object
+						customattr(obj, model.redis, 'load')
+						return obj
+					end
+				elseif not next(loaded_data) then
+					return nil, "Redis hash at " .. obj:getKey() .. " not found."
+				else
+					for k, v in pairs(loaded_data) do
+						obj[k]=v
+					end
 				end
 			end
 			customattr(obj, model.redis, 'load')

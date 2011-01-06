@@ -17,7 +17,7 @@ function one(model, cascade)
 		load = function(redis, self, key, attr)
 			local id, err = redis:hget(key, attr)
 			if not id then return nil, err end
-			local res, err =  model:find(id)
+			local res, err =  model:findById(id)
 			if res then
 				self[attr]=res
 				return res
@@ -72,7 +72,7 @@ function many(model, cascade)
 				r:multi()
 				model:withRedis(r, function(model)
 					for i, id in ipairs(finishFromSetIds) do
-						table.insert(finishFindById, model:findByIdDelayed(id))
+						table.insert(finishFindById, model:findById(id))
 					end
 				end)
 			end)
