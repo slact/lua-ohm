@@ -12,7 +12,7 @@ module "lohm.model"
 -- unique identifier generators
 local newId = {
 	autoincrement = function(model)
-		local key = ("%s:autoincrement"):format(model:key("id"))
+		local key = ("%s:__id"):format(model:key("id"))
 		return model.redis:incr(key)
 	end,
 
@@ -65,7 +65,7 @@ do
 	newId.random=newId.random256
 end
 
-local modelmeta
+local model_prototype
 do
 	local function fromSort_general(self, key, pattern, maxResults, offset, descending, lexicographic)
 		local res, err = self.redis:sort(key, {
@@ -91,7 +91,7 @@ do
 		end
 	end
 	
-	modelmeta = { __index = {
+	model_prototype = {
 		reserveNextId = function(self)
 			return newId.autoincrement(self)
 		end,
@@ -172,7 +172,7 @@ do
 		withRedis = function(self, redisClient, callback)
 			return callback(setmetatable({redis=redisClient}, {__index=self}))
 		end
-	}}
+	}
 end
 
 function new(arg, redisconn)
@@ -215,5 +215,18 @@ function new(arg, redisconn)
 		return newobject(nil, id, true)
 	end
 
-	return setmetatable(model, modelmeta)
+	return setmetatable(model, {
+		__index = function(self, k)
+			local k_type = type(k)
+			if k_type == 'number' then
+				-- MyModel[12] == MyModel:findById(12)
+				return self:findById(k)
+			elseif k_type == 'table' then
+				-- MyModel[{foo='bar',bar="baz"}] == MyModel:findByAttr({foo='bar',bar="baz"})
+				return self:findByAttr(k)
+			else
+				return model_prototype[k]
+			end
+		end
+	})
 end
