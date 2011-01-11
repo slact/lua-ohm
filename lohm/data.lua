@@ -18,6 +18,44 @@ module ("lohm.data", function(t)
 	})
 end)
 
+local ccreate, cresume, cstatus = coroutine.create, coroutine.resume, coroutine.status
+local function transactionize = function(self, redis, event_name, ...)
+	local transaction_coroutines = {} --TODO: reuse this table, memoize more, etc.
+	for i,naked_callback in pairs(self.callbacks[event_name]) do
+		table.insert(transaction_coroutines, ccreate(naked_callback))
+	end
+	local my_key = self:getKey()
+
+	--transaction function
+	return function(redis)
+		--WATCH ...
+		while i<#transaction_coroutines do
+			local transaction_callback = transaction_coroutines[i]
+			assert(cresume(transaction_callback, redis, ...))
+			if cstatus(transaction_callback)=='dead' then
+				table.remove(transaction_coroutines, i)
+			else
+				i = i + 1
+			end
+		end
+
+
+
+		--TODO: UNFINISHED
+
+
+		redis:multi()
+
+		while i<#transaction_coroutines do
+			local transaction_callback = transaction_coroutines[i]
+			assert(cresume(transaction_callback, , ...))
+		end
+
+
+
+	end
+end
+
 function new(datatype, model, ...)
 	assert(datatypes[datatype], ("%s is an invalid redis data type, or it hasn't been implemented in lohm yet."):format(datatype))
 	
