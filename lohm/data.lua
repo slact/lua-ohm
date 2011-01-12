@@ -62,17 +62,16 @@ local function transactionize = function(self, transaction_name, ...)
 			else
 				table.remove(transaction_coroutines, i)
 			end
-		end
+			end
 	end)
 
 	if not res then return nil, err end
 	for i, transaction_callback in ipairs(transaction_coroutines) do
 		cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback])))
 		--we no longer care about the coroutine's status. we're done.
-	end
+end
 
 	return res
-end
 
 function new(datatype, model, ...)
 	assert(datatypes[datatype], ("%s is an invalid redis data type, or it hasn't been implemented in lohm yet."):format(datatype))
