@@ -31,6 +31,7 @@ do
 			if(newval~=nil) then
 				redis:sadd(self:getKey(newval), id)
 			end
+			return self
 		end,
 
 		getKey = function(self, val)

@@ -3,12 +3,15 @@ local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack
 
 local debug = debug
 local function I(...) return ... end
+local Index = require "lohm.index"
 module "lohm.hash"
 
-function new(model, prototype, attributes)
+function new(model, prototype, arg)
+
+	local callbacks = {load={},save={},delete={}}
 
 	--custom attribute stuff
-	attributes = attributes or {}
+	local attributes, indices = arg.attributes or {}, {}
 	setmetatable(attributes, {__index=function(t,k)
 		return {
 			load=function(redis, self, key, attr)
@@ -20,105 +23,70 @@ function new(model, prototype, attributes)
 			delete=I
 		}
 	end})
-	local function customattr(self, redis, custom, these_attributes)
-		local afterYield = {}
-		local key = self:getKey()
-		for attr, fn in pairs(these_attributes or attributes) do
-			local coro = coroutine.create(fn[custom])
-			assert(coroutine.resume(coro, redis, self, key, attr, rawget(self, attr)))
-			if coroutine.status(coro)=='suspended' then
-				table.insert(afterYield, coro)
+	
+	local unparsed_indices = arg.index or arg.indices
+	if unparsed_indices and next(unparsed_indices) then
+		local defaultIndex = Index:getDefault()
+		for attr, indexType in pairs(unparsed_indices) do
+			if type(attr)~="string" then 
+				attr, indexType = indexType, defaultIndex
 			end
-		end
-		return function(...)
-			for i, coro in pairs(afterYield) do
-				assert(coroutine.resume(coro, ...))
-			end
+			indices[attr] = Index:new(indexType, model, attr)
 		end
 	end
-	
-	local indices = model.indices
-	local indexed = {}
-	for index_name, index_table in pairs(indices) do
-		table.insert(indexed, index_name)
+
+	for attr, index in pairs(indices) do
+		table.insert(callbacks.save, function(self, redis)
+			local savedval = redis:hget(self:getKey(), attr)
+			assert(index:update(self, redis, id, self[attr], savedval))
+		end)
+
+		table.insert(callbacks.save, function(self, redis)
+			local savedval = redis:hget(self:getKey(), attr)
+			assert(index:update(self, redis, id, nil, savedval))
+		end)
+	end
+
+	for attr, cb in pairs(attributes) do
+		--TODO: attribute!!!
 	end
 
 	local hash_prototype = {
-		save_transaction = function(self, what)
+		save_transaction = function(self, redis)
 			local key = self:getKey()
+			
 			if not key then
-				local id = model:reserveNextId()
+				--a new id is needed
+				local id = model:withRedis(redis, function(r)
+					return r:reserveNextId()
+				end)
 				self:setId(id)
 				key = self:getKey()
 			end
-			if type(what) == "string" then
-				what = { what }
-			end
 			assert(key, "Tried to save data without a key or key assignment scheme. You can't do that.")
 			local id = self:getId()
-			--TODO: this is probably inefficient. do it better.
-			return function(r)
-				--take care of indexing
-				local change, old_indexed_attr = {}, {}
-				if not what then
-					change = self
-				elseif type(what)=='table' then
-					for i, k in pairs(what) do
-						change[k]=self[k]
-					end
+			
+			redis:multi()
+
+			local hash_change = {}
+			for i,v in pairs(self) do
+				if type(v)~='table' then
+					hash_change[i]=v
 				end
-				
-				local hash_change, custom_change = {}, {}
-				--get the _raw_ attribute values that are being updated and are indexed. While we're at it, see what custom attributes we need to save
-				for k, v in  pairs(change) do
-					local customattr = rawget(attributes, k) --rawget is needed here. so long as attributes' metatable has that fancy default __index
-					if customattr then
-						custom_change[k]=customattr
-					else
-						hash_change[k]=v
-						if indices[k] then
-							--TODO: hmget will probably be faster
-							old_indexed_attr[k] = r:hget(key, k)
-						end
-					end
-				end
-				
-				local after = customattr(self, r, 'save', custom_change)
-				r:multi()
-				after()
-				--update indices
-				for k, v in pairs(hash_change) do
-					local index = indices[k]
-					if index then
-						indices[k]:update(r, id, v, old_indexed_attr[k])
-					end
-				end
-				if next(hash_change) then --make sure changeset is non-empty
-					r:hmset(key, hash_change)
-				end
+			end
+			if next(hash_change) then --make sure changeset is non-empty
+				redis:hmset(key, self)
 			end
 		end,
-	
-		delete_transaction = function(self)
-			--get old values 
-			local key, id = self:getKey(), self:getId()
-			--NOTE: this is probably inefficient. do it better.
-			return function(r)
-				local current_indexed = {}
-				if #indexed>0 then
-					current_indexed = r:hmget(key, indexed)
-				end
-				local after = customattr(self, r, 'delete')
-				r:multi()
-				--MULTI
-				after()
-				local id = self:getId()
-				for attr, val in pairs(current_indexed) do
-					indices[attr]:update(self, id, nil, val)
-				end
-				
-				r:del(key)
+		
+		delete_transaction = function(self, redis)
+			local current_indexed = {}
+			if #indexed>0 then
+				current_indexed = r:hmget(key, indexed)
 			end
+			redis:multi()
+			
+			redis:del(key)
 		end,
 		
 		get = function(self, attr, force)
@@ -164,23 +132,13 @@ function new(model, prototype, attributes)
 	local hash_meta = { __index = hash_ondemand_loader }
 
 	--return a factory and the hash prototype
-	return function(data, id, load_now)
+	return function(self, redis, id, load_now)
 		local obj =  setmetatable(data or {}, hash_meta)
 		if id then
 			obj:setId(id)
 			if load_now then
-				local loaded_data, err = model.redis:hgetall(obj:getKey())
-				if loaded_data.queued==true then
-					--delayed
-					return function(data)
-						for k, v in pairs(data) do
-							obj[k]=v
-						end
-						--BUG waiting to happen: custom attributes are not loaded atomically with the object
-						customattr(obj, model.redis, 'load')
-						return obj
-					end
-				elseif not next(loaded_data) then
+				local loaded_data, err = redis:hgetall(obj:getKey())
+				if not next(loaded_data) then
 					return nil, "Redis hash at " .. obj:getKey() .. " not found."
 				else
 					for k, v in pairs(loaded_data) do
@@ -188,8 +146,9 @@ function new(model, prototype, attributes)
 					end
 				end
 			end
-			customattr(obj, model.redis, 'load')
+		else
+			return nil, "no id given"
 		end
 		return obj
-	end, hash_prototype
+	end, hash_prototype, callbacks
 end

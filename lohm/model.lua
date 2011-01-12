@@ -2,7 +2,6 @@ local function I(...)
 	return ...
 end
 local Data = require "lohm.data"
-local Index = require "lohm.index"
 local ref = require "lohm.reference"
 local print = print
 local debug = debug
@@ -12,7 +11,7 @@ module "lohm.model"
 -- unique identifier generators
 local newId = {
 	autoincrement = function(model)
-		local key = ("%s:__id"):format(model:key("id"))
+		local key = model:key("__id")
 		return model.redis:incr(key)
 	end,
 
@@ -169,8 +168,8 @@ do
 			return false
 		end,
 
-		withRedis = function(self, redisClient, callback)
-			return callback(setmetatable({redis=redisClient}, {__index=self}))
+		withRedis = function(self, redis_client, callback)
+			return callback(setmetatable({redis=redis_client}, {__index=self}))
 		end
 	}
 end
@@ -195,19 +194,7 @@ function new(arg, redisconn)
 		return key:format(id)
 	end
 
-	model.indices = {}
-	local indices = arg.index or arg.indices
-	if indices and next(indices) then
-		local defaultIndex = Index:getDefault()
-		for attr, indexType in pairs(indices) do
-			if type(attr)~="string" then 
-				attr, indexType = indexType, defaultIndex
-			end
-			model.indices[attr] = Index:new(indexType, model, attr)
-		end
-	end
-
-	local newobject = Data[arg.type or "hash"](model, object, arg.attributes)
+	local newobject = Data[arg.type or "hash"](model, object, arg)
 	model.new = function(self, res, id)
 		return newobject(res or {}, id)
 	end
