@@ -8,51 +8,25 @@ module "lohm.hash"
 
 function new(model, prototype, arg)
 
-	local callbacks = {load={},save={},delete={}}
-
-	--custom attribute stuff
-	local attributes, indices = arg.attributes or {}, {}
-	setmetatable(attributes, {__index=function(t,k)
-		return {
-			load=function(redis, self, key, attr)
-				return redis:hget(key, attr)
-			end, 
-			save=function(redis, self, key, attr, val)
-				return redis:hset(key, attr, val)
-			end,
-			delete=I
-		}
-	end})
-	
-	local unparsed_indices = arg.index or arg.indices
-	if unparsed_indices and next(unparsed_indices) then
-		local defaultIndex = Index:getDefault()
-		for attr, indexType in pairs(unparsed_indices) do
-			if type(attr)~="string" then 
-				attr, indexType = indexType, defaultIndex
+	local callbacks = {
+		load={function(self, redis, id, load_now)
+			if not id then return nil, "No id given, can't load hash from redis." end
+			self:setId(id)
+			redis:milti()
+			if load_now then
+				local loaded_data, err = redis:hgetall(self:getKey())
+				assert(loaded_data.queued==true)
+				loaded_data, err = coroutine.yield()
+				if not next(loaded_data) then
+					return nil, "Redis hash at " .. self:getKey() .. " not found."
+				else
+					for k, v in pairs(loaded_data) do
+						self[k]=v
+					end
+				end
 			end
-			indices[attr] = Index:new(indexType, model, attr)
-		end
-	end
-
-	for attr, index in pairs(indices) do
-		table.insert(callbacks.save, function(self, redis)
-			local savedval = redis:hget(self:getKey(), attr)
-			assert(index:update(self, redis, id, self[attr], savedval))
-		end)
-
-		table.insert(callbacks.save, function(self, redis)
-			local savedval = redis:hget(self:getKey(), attr)
-			assert(index:update(self, redis, id, nil, savedval))
-		end)
-	end
-
-	for attr, cb in pairs(attributes) do
-		--TODO: attribute!!!
-	end
-
-	local hash_prototype = {
-		save_transaction = function(self, redis)
+		end},
+		save={ function(self, redis)
 			local key = self:getKey()
 			
 			if not key then
@@ -77,17 +51,62 @@ function new(model, prototype, arg)
 			if next(hash_change) then --make sure changeset is non-empty
 				redis:hmset(key, self)
 			end
-		end,
-		
-		delete_transaction = function(self, redis)
-			local current_indexed = {}
-			if #indexed>0 then
-				current_indexed = r:hmget(key, indexed)
-			end
+		end },
+		delete={ function(self, redis)
 			redis:multi()
 			
 			redis:del(key)
-		end,
+		end	}
+	}
+
+	--custom attribute stuff
+	local attributes, indices = arg.attributes or {}, {}
+	setmetatable(attributes, {__index=function(t,k)
+		return {
+			load=function(redis, self, key, attr)
+				return redis:hget(key, attr)
+			end, 
+			save=function(redis, self, key, attr, val)
+				return redis:hset(key, attr, val)
+			end,
+			delete=I
+		}
+	end})
+	
+	local unparsed_indices = arg.index or arg.indices
+	if unparsed_indices and next(unparsed_indices) then
+		local defaultIndex = Index:getDefault()
+		for attr, indexType in pairs(unparsed_indices) do
+			if type(attr)~="string" then 
+				attr, indexType = indexType, defaultIndex
+			end
+			
+			local index = Index:new(indexType, model, attr)
+			indices[attr] = index
+			
+			table.insert(callbacks.save, function(self, redis)
+				local savedval = redis:hget(self:getKey(), attr)
+				assert(index:update(self, redis, id, self[attr], savedval))
+			end)
+
+			table.insert(callbacks.save, function(self, redis)
+				local savedval = redis:hget(self:getKey(), attr)
+				assert(index:update(self, redis, id, nil, savedval))
+			end)
+		
+		end
+	end
+
+	for attr, cb in pairs(attributes) do
+		for i, when in pairs {"save", "load", "delete"} do
+			local callback = cb[when]
+			if callback then
+				table.insert(callbacks[when], callback)
+			end
+		end
+	end
+
+	local hash_prototype = {
 		
 		get = function(self, attr, force)
 			local res = rawget(self, attr)
@@ -103,9 +122,17 @@ function new(model, prototype, arg)
 			return self
 		end
 	}
+	
+	--merge that shit. aww yeah.
+	for i, v in pairs(prototype or {}) do
+		if not hash_prototype[i] then
+			hash_prototype[i]=v
+		else
+			error(("%s is a built-in %s, and cannot be overridden by a custom object prototype... yet."):format(i, type(v)))
+		end
+	end
 
-	--TODO: should find a better way to do this. metatable metatables aren't quite as good a solution as I had hoped.
-	local function hash_ondemand_loader(self, attr)
+	local hash_meta = { __index = function hash_ondemand_loader(self, attr)
 		local proto = hash_prototype[attr]
 		if proto then
 			return proto
@@ -118,37 +145,7 @@ function new(model, prototype, arg)
 			end
 			return nil
 		end
-	end
-	
-	--merge that shit. aww yeah.
-	for i, v in pairs(prototype or {}) do
-		if not hash_prototype[i] then
-			hash_prototype[i]=v
-		else
-			error(("%s is a built-in %s, and cannot be overridden by a custom object prototype... yet."):format(i, type(v)))
-		end
-	end
-	
-	local hash_meta = { __index = hash_ondemand_loader }
+	end }
 
-	--return a factory and the hash prototype
-	return function(self, redis, id, load_now)
-		local obj =  setmetatable(data or {}, hash_meta)
-		if id then
-			obj:setId(id)
-			if load_now then
-				local loaded_data, err = redis:hgetall(obj:getKey())
-				if not next(loaded_data) then
-					return nil, "Redis hash at " .. obj:getKey() .. " not found."
-				else
-					for k, v in pairs(loaded_data) do
-						obj[k]=v
-					end
-				end
-			end
-		else
-			return nil, "no id given"
-		end
-		return obj
-	end, hash_prototype, callbacks
+	return hash_meta, hash_prototype, callbacks
 end

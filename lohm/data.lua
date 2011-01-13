@@ -29,9 +29,9 @@ end)
 
 local ccreate, cresume, cstatus = coroutine.create, coroutine.resume, coroutine.status
 
-local function transactionize = function(self, transaction_name, ...)
+local function transactionize = function(self, callbacks, ...)
 	local transaction_coroutines = {} --TODO: reuse this table, memoize more, etc.
-	for i,naked_callback in pairs(self.callbacks[event_name]) do
+	for i,naked_callback in pairs(callbacks) do
 		table.insert(transaction_coroutines, ccreate(naked_callback))
 	end
 	local my_key = self:getKey()
@@ -62,22 +62,25 @@ local function transactionize = function(self, transaction_name, ...)
 			else
 				table.remove(transaction_coroutines, i)
 			end
-			end
+		end
 	end)
 
 	if not res then return nil, err end
 	for i, transaction_callback in ipairs(transaction_coroutines) do
 		cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback])))
 		--we no longer care about the coroutine's status. we're done.
+	end
+	return res
 end
 
-	return res
 
 function new(datatype, model, ...)
 	assert(datatypes[datatype], ("%s is an invalid redis data type, or it hasn't been implemented in lohm yet."):format(datatype))
 	
 	local ids = setmetatable({}, { __mode='k'})
 	local keys = setmetatable({}, { __mode='k'})
+	
+	local callbacks = { load={},save={},delete={} }
 	
 	local data_prototype = {
 		setId = function(self, id)
@@ -99,11 +102,11 @@ function new(datatype, model, ...)
 			return keys[self]
 		end,
 		
-		getCallbacks = function(event_name)
+		getCallbacks = function(self, event_name)
 			return (callbacks[event_name] or {})[event_name]
 		end, 
 		
-		addCallback = function(event_name, callback)
+		addCallback = function(self, event_name, callback)
 			if not callback then return nil, "nothing to add" end
 			if not callbacks[event_name] then callbacks[event_name] = {} end
 			local cb = callbacks[event_name]
@@ -137,16 +140,12 @@ function new(datatype, model, ...)
 	}
 	
 	local obj = require("lohm." .. datatype)
-	local newobj, obj_prototype = obj.new(model, ...)
+	local newobj, obj_prototype, callbacks = obj.new(model, ...)
 	--now the common object methods. we're copying values instead of using   metatables for runtime efficiency
-	
-	--set correct callbacks, please:
 	for k, v in pairs(data_prototype) do
 		rawset(obj_prototype, k, v)
-	end
-	obj:addCallback('save', obj.save_transaction)
-	obj:addCallback('delete', obj.delete_transaction)
-	obj:addCallback('save', obj.save_transaction)
+	end	
+	
 	for i,cbs in ipairs(callbacks) do
 		obj:addCallback('save', cbs.save)
 		obj:addCallback('load', cbs.load)
