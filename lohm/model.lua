@@ -193,8 +193,7 @@ function new(arg, redisconn)
 	model.key = function(self, id)
 		return key:format(id)
 	end
-
-	local newobject = Data[arg.type or "hash"](model, object, arg)
+	local newobject = Data[arg.type or "hash"](model, arg)
 	model.new = function(self, res, id)
 		return newobject(res or {}, id)
 	end
