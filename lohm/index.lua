@@ -23,8 +23,8 @@ do
 	end
 
 	indices.hash = {
-		update = function(self, redis, id, newval, oldval)
-			assert(id, "id must be given")
+		update = function(self, redis, newval, oldval)
+			local id = assert(self:getId(), "id must be given")
 			if(oldval~=nil) then
 				redis:srem(self:getKey(oldval), id)
 			end

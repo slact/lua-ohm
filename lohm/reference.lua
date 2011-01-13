@@ -14,7 +14,7 @@ end)
 
 function one(model, cascade)
 	return {
-		load = function(redis, self, key, attr)
+		load = function(self, redis, attr)
 			local id, err = redis:hget(key, attr)
 			if not id then return nil, err end
 			local res, err =  model:findById(id)
@@ -26,7 +26,7 @@ function one(model, cascade)
 			end
 		end, 
 
-		save = function(redis, self, key, attr, val)
+		save = function(redis, self, attr, val)
 			assert(model:modelOf(val), ("Not a lohm object, or object of unexpected model (type %s)."):format(type(val)))
 			if(cascade) then
 				local c = coroutine.create(val:save_transaction())
