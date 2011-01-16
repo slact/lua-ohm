@@ -51,8 +51,7 @@ function initialize(prototype, arg)
 		end
 	end):addCallback('delete', function(self, redis)
 			redis:multi()
-			
-			redis:del(key)
+			redis:del(self:getKey())
 	end)
 
 	--custom attribute stuff
@@ -60,6 +59,7 @@ function initialize(prototype, arg)
 	setmetatable(attributes, {__index=function(t,k)
 		return {
 			load=function(self, redis, attr)
+				debug.print(redis)
 				return redis:hget(key, attr)
 			end, 
 			save=function(self, redis, attr, val)
@@ -119,7 +119,7 @@ function initialize(prototype, arg)
 		else
 			local key = self:getKey()
 			if key then
-				local res = attributes[attr].load(model.redis, self, key, attr)
+				local res = attributes[attr].load(self, model.redis, key, attr)
 				self[attr]=res
 				return res
 			end

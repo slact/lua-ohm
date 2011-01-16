@@ -44,13 +44,14 @@ local function transactionize(self, redis, callbacks, ...)
 	local arg = {...}
 	local i
 	--transaction function
-	local queued_commands_offset = {}
+local queued_commands_offset = {}
 	local res, err = redis:transaction({cas=true, watch=self:getKey()}, function(redis)
 		--WATCH ...
-		i=0
-		while i<#transaction_coroutines do
+		i=1
+		print(#transaction_coroutines)
+		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
-			assert(cresume(transaction_callback, redis, unpack(arg)))
+			assert(cresume(transaction_callback, self, redis, unpack(arg)))
 			if cstatus(transaction_callback)~='dead' then
 				i = i + 1
 			else
@@ -59,8 +60,9 @@ local function transactionize(self, redis, callbacks, ...)
 		end
 		
 		redis:multi()
-		i=0
-		while i<#transaction_coroutines do
+		i=1
+		print(#transaction_coroutines)
+		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
 			local already_queued = redis:commands_queued()
 			assert(cresume(transaction_callback))
@@ -73,6 +75,7 @@ local function transactionize(self, redis, callbacks, ...)
 		end
 	end)
 
+	debug.print(queued_commands_offset)
 	if not res then return nil, err end
 	for i, transaction_callback in ipairs(transaction_coroutines) do
 		cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback])))
@@ -130,10 +133,14 @@ function new(datatype, model, arg)
 			return model
 		end
 	}
-	for i, v in pairs{'load', 'save', 'delete'} do
-		data_prototype[v]=function(self, ...)
+	for i, operation in pairs{'load', 'save', 'delete'} do
+		data_prototype[operation]=function(self, ...)
 			local key = self:getKey()
-			if not key then error(("Cannot %s without a key"):format(v)) end
+			if not key and operation=='save' then
+				self:setId(self:getModel():reserveNextId())
+				key = self:getKey()
+			end
+			if not key then error(("Cannot %s data without a key"):format(operation)) end
 			local res, err = transactionize(self, model.redis, self:getCallbacks('delete'))
 			return (res and self), err
 		end
