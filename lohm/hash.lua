@@ -6,68 +6,64 @@ local function I(...) return ... end
 local Index = require "lohm.index"
 module "lohm.hash"
 
-function new(model, prototype, arg)
-
-	local callbacks = {
-		load={function(self, redis, id, load_now)
-			if not id then return nil, "No id given, can't load hash from redis." end
+function initialize(prototype, arg)
+	local model = prototype:getModel()
+	prototype:addCallback('load', function(self, redis, id, load_now)
+		if not id then return nil, "No id given, can't load hash from redis." end
+		self:setId(id)
+		redis:milti()
+		if load_now then
+			local loaded_data, err = redis:hgetall(self:getKey())
+			assert(loaded_data.queued==true)
+			loaded_data, err = coroutine.yield()
+			if not next(loaded_data) then
+				return nil, "Redis hash at " .. self:getKey() .. " not found."
+			else
+				for k, v in pairs(loaded_data) do
+					self[k]=v
+				end
+			end
+		end
+	end):addCallback('save', function(self, redis)
+		local key = self:getKey()
+		
+		if not key then
+			--a new id is needed
+			local id = model:withRedis(redis, function(r)
+				return r:reserveNextId()
+			end)
 			self:setId(id)
-			redis:milti()
-			if load_now then
-				local loaded_data, err = redis:hgetall(self:getKey())
-				assert(loaded_data.queued==true)
-				loaded_data, err = coroutine.yield()
-				if not next(loaded_data) then
-					return nil, "Redis hash at " .. self:getKey() .. " not found."
-				else
-					for k, v in pairs(loaded_data) do
-						self[k]=v
-					end
-				end
-			end
-		end},
-		save={ function(self, redis)
-			local key = self:getKey()
-			
-			if not key then
-				--a new id is needed
-				local id = model:withRedis(redis, function(r)
-					return r:reserveNextId()
-				end)
-				self:setId(id)
-				key = self:getKey()
-			end
-			assert(key, "Tried to save data without a key or key assignment scheme. You can't do that.")
-			local id = self:getId()
-			
-			redis:multi()
+			key = self:getKey()
+		end
+		assert(key, "Tried to save data without a key or key assignment scheme. You can't do that.")
+		local id = self:getId()
+		
+		redis:multi()
 
-			local hash_change = {}
-			for i,v in pairs(self) do
-				if type(v)~='table' then
-					hash_change[i]=v
-				end
+		local hash_change = {}
+		for i,v in pairs(self) do
+			if type(v)~='table' then
+				hash_change[i]=v
 			end
-			if next(hash_change) then --make sure changeset is non-empty
-				redis:hmset(key, self)
-			end
-		end },
-		delete={ function(self, redis)
+		end
+		if next(hash_change) then --make sure changeset is non-empty
+			redis:hmset(key, self)
+		end
+	end):addCallback('delete', function(self, redis)
 			redis:multi()
 			
 			redis:del(key)
-		end	}
-	}
+	end)
 
 	--custom attribute stuff
 	local attributes, indices = arg.attributes or {}, {}
 	setmetatable(attributes, {__index=function(t,k)
 		return {
-			load=function(redis, self, key, attr)
+			load=function(self, redis, attr)
 				return redis:hget(key, attr)
 			end, 
-			save=function(redis, self, key, attr, val)
-				return redis:hset(key, attr, val)
+			save=function(self, redis, attr, val)
+				return redis:hset(self:getKey(), attr, val)
 			end,
 			delete=I
 		}
@@ -84,56 +80,40 @@ function new(model, prototype, arg)
 			local index = Index:new(indexType, model, attr)
 			indices[attr] = index
 			
-			table.insert(callbacks.save, function(self, redis)
+			prototype:addCallback('save', function(self, redis)
 				local savedval = redis:hget(self:getKey(), attr)
 				assert(index:update(self, redis, id, self[attr], savedval))
 			end)
 
-			table.insert(callbacks.save, function(self, redis)
+			prototype:addCallback('delete', function(self, redis)
 				local savedval = redis:hget(self:getKey(), attr)
 				assert(index:update(self, redis, id, nil, savedval))
 			end)
-		
 		end
 	end
 
 	for attr, cb in pairs(attributes) do
 		for i, when in pairs {"save", "load", "delete"} do
-			local callback = cb[when]
-			if callback then
-				table.insert(callbacks[when], callback)
-			end
+			prototype:addCallback(v, cb[when])
 		end
 	end
 
-	local hash_prototype = {
-		
-		get = function(self, attr, force)
-			local res = rawget(self, attr)
-			if force or not res then 
-				res = attributes[attr].load(redis, self:getKey(), attr, self)
-				self[attr]=res
-			end
-			return res
-		end,
-
-		set = function(self, attr, val)
-			self[attr]=val
-			return self
+	function prototype:get(attr, force)
+		local res = rawget(self, attr)
+		if force or not res then 
+			res = attributes[attr].load(redis, self:getKey(), attr, self)
+			self[attr]=res
 		end
-	}
+		return res
+	end
+
+	function prototype:set(attr, val)
+		self[attr]=val
+		return self
+	end
 	
-	--merge that shit. aww yeah.
-	for i, v in pairs(prototype or {}) do
-		if not hash_prototype[i] then
-			hash_prototype[i]=v
-		else
-			error(("%s is a built-in %s, and cannot be overridden by a custom object prototype... yet."):format(i, type(v)))
-		end
-	end
-
-	local hash_meta = { __index = function hash_ondemand_loader(self, attr)
-		local proto = hash_prototype[attr]
+	local hash_meta = { __index = function(self, attr)
+		local proto = prototype[attr]
 		if proto then
 			return proto
 		else
@@ -146,6 +126,16 @@ function new(model, prototype, arg)
 			return nil
 		end
 	end }
-
-	return hash_meta, hash_prototype, callbacks
+	
+	return function(data, id, load_now)
+		local obj = setmetatable(data or {}, hash_meta)
+		if id then 
+			obj:setId(id) 
+		end
+		if load_now then
+			return obj:load()
+		else
+			return obj
+		end
+	end
 end
