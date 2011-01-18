@@ -48,7 +48,6 @@ local queued_commands_offset = {}
 	local res, err = redis:transaction({cas=true, watch=self:getKey()}, function(redis)
 		--WATCH ...
 		i=1
-		print(#transaction_coroutines)
 		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
 			assert(cresume(transaction_callback, self, redis, unpack(arg)))
@@ -61,7 +60,6 @@ local queued_commands_offset = {}
 		
 		redis:multi()
 		i=1
-		print(#transaction_coroutines)
 		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
 			local already_queued = redis:commands_queued()
@@ -119,9 +117,10 @@ function new(datatype, model, arg)
 		
 		addCallback = function(self, event_name, callback)
 			if not callback then return nil, "nothing to add" end
-			if not callbacks[event_name] then callbacks[event_name] = {} end
 			local cb = callbacks[event_name]
+			local oldcb = #cb
 			table.insert(cb, callback)
+			print(self, event_name, oldcb, #cb)
 			return self
 		end,
 		
@@ -133,15 +132,18 @@ function new(datatype, model, arg)
 			return model
 		end
 	}
-	for i, operation in pairs{'load', 'save', 'delete'} do
-		data_prototype[operation]=function(self, ...)
+	for i, operation in pairs{'load', 'delete', 'save'} do
+		data_prototype[operation]=function(self, redis)
+			print(operation, "IN PROGRESS")
 			local key = self:getKey()
 			if not key and operation=='save' then
-				self:setId(self:getModel():reserveNextId())
+				self:setId(self:getModel():withRedis(redis, function(model)
+					return model:reserveNextId()
+				end))
 				key = self:getKey()
 			end
 			if not key then error(("Cannot %s data without a key"):format(operation)) end
-			local res, err = transactionize(self, model.redis, self:getCallbacks('delete'))
+			local res, err = transactionize(self, model.redis, self:getCallbacks(operation))
 			return (res and self), err
 		end
 	end

@@ -26,15 +26,6 @@ function initialize(prototype, arg)
 		end
 	end):addCallback('save', function(self, redis)
 		local key = self:getKey()
-		
-		if not key then
-			--a new id is needed
-			local id = model:withRedis(redis, function(r)
-				return r:reserveNextId()
-			end)
-			self:setId(id)
-			key = self:getKey()
-		end
 		assert(key, "Tried to save data without a key or key assignment scheme. You can't do that.")
 		local id = self:getId()
 		
@@ -50,8 +41,8 @@ function initialize(prototype, arg)
 			redis:hmset(key, self)
 		end
 	end):addCallback('delete', function(self, redis)
-			redis:multi()
-			redis:del(self:getKey())
+		redis:multi()
+		redis:del(self:getKey())
 	end)
 
 	--custom attribute stuff
@@ -59,8 +50,7 @@ function initialize(prototype, arg)
 	setmetatable(attributes, {__index=function(t,k)
 		return {
 			load=function(self, redis, attr)
-				debug.print(redis)
-				return redis:hget(key, attr)
+				return redis:hget(self:getKey(), attr)
 			end, 
 			save=function(self, redis, attr, val)
 				return redis:hset(self:getKey(), attr, val)
@@ -82,26 +72,26 @@ function initialize(prototype, arg)
 			
 			prototype:addCallback('save', function(self, redis)
 				local savedval = redis:hget(self:getKey(), attr)
-				assert(index:update(self, redis, id, self[attr], savedval))
+				assert(index:update(self, redis, self:getId(), self[attr], savedval))
 			end)
 
 			prototype:addCallback('delete', function(self, redis)
 				local savedval = redis:hget(self:getKey(), attr)
-				assert(index:update(self, redis, id, nil, savedval))
+				assert(index:update(self, redis, self:getId(), nil, savedval))
 			end)
 		end
 	end
 
 	for attr, cb in pairs(attributes) do
 		for i, when in pairs {"save", "load", "delete"} do
-			prototype:addCallback(v, cb[when])
+			prototype:addCallback(when, cb[when])
 		end
 	end
 
 	function prototype:get(attr, force)
 		local res = rawget(self, attr)
 		if force or not res then 
-			res = attributes[attr].load(redis, self:getKey(), attr, self)
+			res = attributes[attr].load(model.redis, self:getKey(), attr, self)
 			self[attr]=res
 		end
 		return res
@@ -118,6 +108,7 @@ function initialize(prototype, arg)
 			return proto
 		else
 			local key = self:getKey()
+			print(key, attr)
 			if key then
 				local res = attributes[attr].load(self, model.redis, key, attr)
 				self[attr]=res
