@@ -34,23 +34,24 @@ end)
 
 local ccreate, cresume, cstatus = coroutine.create, coroutine.resume, coroutine.status
 
-local function transactionize(self, redis, callbacks, ...)
+local function transactionize(self, redis, callbacks)
 	local transaction_coroutines = {} --TODO: reuse this table, memoize more, etc.
 	for i,naked_callback in pairs(callbacks) do
 		table.insert(transaction_coroutines, ccreate(naked_callback))
 	end
-	local my_key = self:getKey()
+	local my_key, my_id = (self:getKey()), (self:getId())
 	
-	local arg = {...}
 	local i
 	--transaction function
-local queued_commands_offset = {}
+	local queued_commands_offset = {}
+	local success, last_ret, last_err 
 	local res, err = redis:transaction({cas=true, watch=self:getKey()}, function(redis)
 		--WATCH ...
 		i=1
 		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
-			assert(cresume(transaction_callback, self, redis, unpack(arg)))
+			success, last_ret, last_err = cresume(transaction_callback, self, redis, my_id)
+			print("WEE", success, last_ret, last_err)
 			if cstatus(transaction_callback)~='dead' then
 				i = i + 1
 			else
@@ -63,7 +64,8 @@ local queued_commands_offset = {}
 		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
 			local already_queued = redis:commands_queued()
-			assert(cresume(transaction_callback))
+			success, last_ret, last_err = cresume(transaction_callback)
+			print("WEE", success, last_ret, last_err)
 			if cstatus(transaction_callback) ~= 'dead' then
 				queued_commands_offset[transaction_callback]={ already_queued, redis:commands_queued() }
 				i = i + 1
@@ -73,13 +75,13 @@ local queued_commands_offset = {}
 		end
 	end)
 
-	debug.print(queued_commands_offset)
 	if not res then return nil, err end
 	for i, transaction_callback in ipairs(transaction_coroutines) do
-		cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback])))
+		success, last_ret, last_err = cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback])))
+		print("WEE", success, last_ret, last_err)
 		--we no longer care about the coroutine's status. we're done.
 	end
-	return res
+	return last_ret, last_err
 end
 
 

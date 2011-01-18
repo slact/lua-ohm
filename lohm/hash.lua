@@ -8,22 +8,23 @@ module "lohm.hash"
 
 function initialize(prototype, arg)
 	local model = prototype:getModel()
-	prototype:addCallback('load', function(self, redis, id, load_now)
+	prototype:addCallback('load', function(self, redis)
+		local id = self:getId()
 		if not id then return nil, "No id given, can't load hash from redis." end
-		self:setId(id)
-		redis:milti()
-		if load_now then
-			local loaded_data, err = redis:hgetall(self:getKey())
-			assert(loaded_data.queued==true)
-			loaded_data, err = coroutine.yield()
-			if not next(loaded_data) then
-				return nil, "Redis hash at " .. self:getKey() .. " not found."
-			else
-				for k, v in pairs(loaded_data) do
-					self[k]=v
-				end
+		redis:multi()
+		local hgetall_res, err = redis:hgetall(self:getKey())
+		assert(hgetall_res.queued==true)
+		local raw_loaded_data = coroutine.yield()
+		local loaded_data = raw_loaded_data[1]
+
+		if not next(loaded_data) then
+			return nil, "Redis hash at " .. self:getKey() .. " not found."
+		else
+			for k, v in pairs(loaded_data) do
+				self[k]=v
 			end
 		end
+		return self
 	end):addCallback('save', function(self, redis)
 		local key = self:getKey()
 		assert(key, "Tried to save data without a key or key assignment scheme. You can't do that.")
@@ -40,9 +41,11 @@ function initialize(prototype, arg)
 		if next(hash_change) then --make sure changeset is non-empty
 			redis:hmset(key, self)
 		end
+		return self
 	end):addCallback('delete', function(self, redis)
 		redis:multi()
 		redis:del(self:getKey())
+		return self
 	end)
 
 	--custom attribute stuff
@@ -91,7 +94,7 @@ function initialize(prototype, arg)
 	function prototype:get(attr, force)
 		local res = rawget(self, attr)
 		if force or not res then 
-			res = attributes[attr].load(model.redis, self:getKey(), attr, self)
+			res = attributes[attr].load(self, model.redis, attr)
 			self[attr]=res
 		end
 		return res
@@ -110,7 +113,7 @@ function initialize(prototype, arg)
 			local key = self:getKey()
 			print(key, attr)
 			if key then
-				local res = attributes[attr].load(self, model.redis, key, attr)
+				local res = attributes[attr].load(self, model.redis, attr)
 				self[attr]=res
 				return res
 			end
