@@ -1,5 +1,6 @@
 require "redis"
 require "lohm"
+require "debug"
 function debug.dump(tbl)
 	local function tcopy(t) local nt={}; for i,v in pairs(t) do nt[i]=v end; return nt end
 	local function printy(thing, prefix, tablestack)
@@ -7,12 +8,23 @@ function debug.dump(tbl)
 		if     t == "nil" then return "nil"
 		elseif t == "string" then return string.format('%q', thing)
 		elseif t == "number" then return tostring(thing)
+		elseif t == "function" then
+			local info = debug.getinfo(thing)
+			local source = info.source
+			if info.linedefined then
+				source = source .. ":" .. info.linedefined .. " - " .. info.lastlinedefined
+			end
+			if info.name then
+				return ("%s %s: %s"):format(info.namewhat, info.name, source)
+			else
+				return source
+			end
 		elseif t == "table" then
 			if tablestack and tablestack[thing] then return string.format("%s (recursion)", tostring(thing)) end
 			local kids, pre, substack = {}, "	" .. prefix, (tablestack and tcopy(tablestack) or {})
 			substack[thing]=true	
 			for k, v in pairs(thing) do
-				table.insert(kids, string.format('%s%s=%s,',pre,printy(k, ''),printy(v, pre, substack)))
+				table.insert(kids, string.format('%s%s= %s,',pre,printy(k, ''),printy(v, pre, substack)))
 			end
 			return string.format("%s{\n%s\n%s}", tostring(thing), table.concat(kids, "\n"), prefix)
 		else
@@ -96,19 +108,19 @@ end)
 
 context("Basic manipulation", function()
 	test("insertion / autoincrement id counter / lookup by id / deletion", function()
-		local Model = lohm.new({key="foo:%s"}, newr())
+		local redis = newr()
+		local Model = lohm.new({key="foo:%s"}, redis)
 		local m = Model:new{foo='barbar'}
 		m:save()
-		
 		local k, id = m:getKey(), m:getId()
 		m:set('barbar','baz'):save()
 		assert(m:getId()==id)
-		
 		local checkM = assert(Model:findOne(id))
 		assert_true( checkM.barbar=="baz" )
 		assert_true( "barbar"==checkM.foo )
 		assert(checkM:delete())
-		local notfound = Model:findOne(id)
+		local notfound = Model[tonumber(id)]
+		debug.print("NOTFOUND", type(notfound), notfound)
 		assert_true(not notfound)
 	end)
 end)

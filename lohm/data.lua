@@ -34,21 +34,24 @@ end)
 
 local ccreate, cresume, cstatus = coroutine.create, coroutine.resume, coroutine.status
 
-local function transactionize(self, redis, callbacks, ...)
+local function transactionize(self, redis, callbacks)
 	local transaction_coroutines = {} --TODO: reuse this table, memoize more, etc.
 	for i,naked_callback in pairs(callbacks) do
 		table.insert(transaction_coroutines, ccreate(naked_callback))
 	end
-	local my_key = self:getKey()
+	local my_key, my_id = (self:getKey()), (self:getId())
 	
-	local arg = {...}
-	
+	local i
 	--transaction function
+	local queued_commands_offset = {}
+	local success, last_ret, last_err 
 	local res, err = redis:transaction({cas=true, watch=self:getKey()}, function(redis)
 		--WATCH ...
-		while i<#transaction_coroutines do
+		i=1
+		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
-			assert(cresume(transaction_callback, redis, unpack(arg)))
+			success, last_ret, last_err = cresume(transaction_callback, self, redis, my_id)
+			print("WEE", success, last_ret, last_err)
 			if cstatus(transaction_callback)~='dead' then
 				i = i + 1
 			else
@@ -57,12 +60,12 @@ local function transactionize(self, redis, callbacks, ...)
 		end
 		
 		redis:multi()
-		
-		local queued_commands_offset = {}
-		while i<#transaction_coroutines do
+		i=1
+		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
 			local already_queued = redis:commands_queued()
-			assert(cresume(transaction_callback))
+			success, last_ret, last_err = cresume(transaction_callback)
+			print("WEE", success, last_ret, last_err)
 			if cstatus(transaction_callback) ~= 'dead' then
 				queued_commands_offset[transaction_callback]={ already_queued, redis:commands_queued() }
 				i = i + 1
@@ -74,10 +77,11 @@ local function transactionize(self, redis, callbacks, ...)
 
 	if not res then return nil, err end
 	for i, transaction_callback in ipairs(transaction_coroutines) do
-		cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback])))
+		success, last_ret, last_err = cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback])))
+		print("WEE", success, last_ret, last_err)
 		--we no longer care about the coroutine's status. we're done.
 	end
-	return res
+	return last_ret, last_err
 end
 
 
@@ -116,8 +120,8 @@ function new(datatype, model, arg)
 		
 		addCallback = function(self, event_name, callback)
 			if not callback then return nil, "nothing to add" end
-			if not callbacks[event_name] then callbacks[event_name] = {} end
 			local cb = callbacks[event_name]
+			local oldcb = #cb
 			table.insert(cb, callback)
 			return self
 		end,
@@ -130,11 +134,18 @@ function new(datatype, model, arg)
 			return model
 		end
 	}
-	for i, v in pairs{'load', 'save', 'delete'} do
-		data_prototype[v]=function(self, ...)
+	for i, operation in pairs{'load', 'delete', 'save'} do
+		data_prototype[operation]=function(self, redis)
+			print(operation, "IN PROGRESS")
 			local key = self:getKey()
-			if not key then error(("Cannot %s without a key"):format(v)) end
-			local res, err = transactionize(self, model.redis, self:getCallbacks('delete'))
+			if not key and operation=='save' then
+				self:setId(self:getModel():withRedis(redis, function(model)
+					return model:reserveNextId()
+				end))
+				key = self:getKey()
+			end
+			if not key then error(("Cannot %s data without a key"):format(operation)) end
+			local res, err = transactionize(self, model.redis, self:getCallbacks(operation))
 			return (res and self), err
 		end
 	end
