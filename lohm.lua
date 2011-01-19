@@ -4,8 +4,9 @@ module ("lohm", function(t)
 	setmetatable(t, { 
 		__call = function(self, ...) return t.new(...) end,
 		__index = function(self, k)
-			return function(...) 
-				Model.new(k, ...)
+			return function(arg, redis) 
+				arg.type=k
+				return Model.new(arg, redis)
 			end
 		end
 	})

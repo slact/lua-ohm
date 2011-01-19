@@ -177,7 +177,7 @@ end
 function new(arg, redisconn)
 
 	local model, object = arg.model or {}, arg.object or {}
-	assert(type(arg.key)=='string', "Redis object Must. Have. Key.")
+	assert(type(arg.key)=='string', "Redis " .. (arg.type or "") .. " object Must Have a key parameter (something like 'foo:%s').")
 	assert(redisconn, "Valid redis connection needed")
 	assert(redisconn:ping())
 	model.redis = redisconn --presumably an open connection

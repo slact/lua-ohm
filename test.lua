@@ -77,6 +77,12 @@ if not telescope then
 		end
 		return true
 	end
+
+	function assert_false(...)
+		for i,v in pairs{...} do
+			assert(not v)
+		end
+	end
 end
 
 context("Initialization", function()
@@ -122,6 +128,19 @@ context("Basic manipulation", function()
 		local notfound = Model[tonumber(id)]
 		debug.print("NOTFOUND", type(notfound), notfound)
 		assert_true(not notfound)
+	end)
+end)
+
+context("Sets", function()
+	test("Rudimentary set manipulation", function()
+		local r = newr()
+		local Set = lohm.set({key="setty:%s"}, r)
+		s=Set:new():add('foo', "bar","baz")
+		s:save()
+		local setId = s:getId()
+		local sprime = Set[setId]
+		assert_true(r:sismember(sprime:getKey(), 'foo'))
+		assert_false(r:sismember(sprime:getKey(), 'bax'))
 	end)
 end)
 

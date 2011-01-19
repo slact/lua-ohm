@@ -12,8 +12,7 @@ module ("lohm.reference", function(t)
 	return t
 end)
 
-function one(model, cascade)
-	return {
+function one(self, redis)
 		load = function(self, redis, attr)
 			local id, err = redis:hget(key, attr)
 			if not id then return nil, err end

@@ -4,7 +4,14 @@ local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack
 local debug = debug
 local function I(...) return ... end
 local Index = require "lohm.index"
-module "lohm.hash"
+module("lohm.hash", function(t,k)
+	setmetatable(t, {
+		__call = function(arg, redis)
+			arg.type='hash'
+			return Model.new(arg, redis)
+		end
+	})
+end)
 
 function initialize(prototype, arg)
 	local model = prototype:getModel()
@@ -58,7 +65,8 @@ function initialize(prototype, arg)
 			save=function(self, redis, attr, val)
 				return redis:hset(self:getKey(), attr, val)
 			end,
-			delete=I
+			delete=I,
+			getCallbacks = function() return {} end
 		}
 	end})
 	
@@ -82,12 +90,6 @@ function initialize(prototype, arg)
 				local savedval = redis:hget(self:getKey(), attr)
 				assert(index:update(self, redis, self:getId(), nil, savedval))
 			end)
-		end
-	end
-
-	for attr, cb in pairs(attributes) do
-		for i, when in pairs {"save", "load", "delete"} do
-			prototype:addCallback(when, cb[when])
 		end
 	end
 
@@ -120,6 +122,24 @@ function initialize(prototype, arg)
 			return nil
 		end
 	end }
+	
+	local function append(t1, t2)
+		for i,v in pairs(t2) do
+			table.insert(t1, v)
+		end
+		return t1
+	end
+	
+	hash_meta.getCallbacks = function(operation)
+		--TODO: memoize this instead of doing it on the fly.
+		local ret = append({}, prototype:getCallbacks(operation))
+		for i, obj_table in ipairs{attributes, indices} do
+			for j, obj in pairs(obj_table) do
+				append(ret, obj:getCallbacks(operation))
+			end
+		end
+		return ret
+	end
 	
 	return function(data, id, load_now)
 		local obj = setmetatable(data or {}, hash_meta)
