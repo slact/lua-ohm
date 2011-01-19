@@ -114,15 +114,36 @@ function new(datatype, model, arg)
 			return keys[self]
 		end,
 		
+		clearId = function(self)
+			ids[self]=nil
+			keys[self]=nil
+			return self
+		end,
+		clearKey = function(self) return self:clearId() end
+		
+		
 		getCallbacks = function(self, event_name)
 			return callbacks[event_name]
 		end, 
 		
-		addCallback = function(self, event_name, callback)
+		addCallback = function(self, event_name, callback, bind_to)
 			if not callback then return nil, "nothing to add" end
 			local cb = callbacks[event_name]
+			if type(bind_to)=='table' then
+				local true_callback = callback
+				callback = function(self, ...)
+					return true_callback(bind_to, ...)
+				end
+			end
 			local oldcb = #cb
 			table.insert(cb, callback)
+			return self
+		end,
+		
+		addCallbacks = function(self, event_name, callbacks, bind_to)
+			for i, cb in pairs(callbacks) do
+				assert(self:addCallback(event_name, cb))
+			end
 			return self
 		end,
 		

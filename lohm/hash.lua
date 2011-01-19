@@ -69,21 +69,42 @@ function initialize(prototype, arg)
 			end,
 			delete=I,
 			getCallbacks = function() return {} end
-		}
+		}c
 	end})
 	
-	for attr_name, attr_val in pairs(attributes) do
-		if lohm.isModel(attr_val) then
+	for attr_name, attr_model in pairs(attributes) do
+		if lohm.isModel(attr_model) then
 			attributes[attr_name] = {
 				load = function(self, redis, attr)
-					self[attr]=assert(attr_val:findById(self[attr]))
+					self[attr]=assert(attr_model:findById(self[attr]))
 				end,
 				save = function(self, redis, attr)
-					local refId=attr_val:getId()
+					assert(attr==attr_name, 'sanity check')
+					local reference = self[attr_name]
+					if type(reference)~='table' then
+						error(("Expected hash attribute %s to be a lohm model or reference (keyed %s) "):format(attr,attr_model.key('*') ))
+					redis:hset(self:getKey(), attr_name, refId)
 				end,
 				delete = I
 			}
-			prototype:addCallbacks('save', attr_val:getCallbacks(), attr_val)
+			--everything cascades here
+			for i,event in pairs{'load', 'save', 'delete'} do
+				prototype:addCallbacks(event, attr_val:getCallbacks(event), attr_val)
+			end
+			prototype:addCallback('load', function(self, redis)
+				--this is a transaction coroutine, mind you.
+				redis:multi() --MULTI
+				coroutine.yield() -- EXEC
+				--afterwards
+				self[attr_name]=attr_val
+			end)
+			prototype:addCallback('save', function(self, redis)
+				--this is a transaction coroutine, mind you.
+				local id = attr_val:get
+				redis:multi()
+				coroutine.yield()
+				self[attr_name]=attr_val
+			end)
 		end
 	end
 
@@ -106,6 +127,7 @@ function initialize(prototype, arg)
 			prototype:addCallback('delete', function(self, redis)
 				local savedval = redis:hget(self:getKey(), attr)
 				assert(index:update(self, redis, self:getId(), nil, savedval))
+				self:clearKey()
 			end)
 		end
 	end
@@ -122,21 +144,6 @@ function initialize(prototype, arg)
 	function prototype:set(attr, val)
 		self[attr]=val
 		return self
-	end
-
-	do
-		local getOrdinaryCallbacks = prototype.getCallbacks
-		function prototype:getCallbacks(operation)
-			--TODO: memoize this instead of doing it on the fly.
-			local ret = append({}, getOrdinaryCallbacks(self, operation))
-			for i, obj_table in ipairs{attributes, indices} do
-				for j, obj in pairs(obj_table) do
-					append(ret, obj:getCallbacks(operation))
-				end
-			end
-			return ret
-		end
-
 	end
 
 	local hash_meta = { __index = function(self, attr)
