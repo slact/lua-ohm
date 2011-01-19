@@ -8,6 +8,11 @@ local debug = debug
 local next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack = next, assert, coroutine, table, pairs, ipairs, type, setmetatable, require, pcall, io, tostring, math, unpack
 module "lohm.model"
 
+local all_models = setmetatable({}, {__mode='k'})
+function isModel(m)
+	return all_models[m]
+end
+
 -- unique identifier generators
 local newId = {
 	autoincrement = function(model)
@@ -200,7 +205,9 @@ function new(arg, redisconn)
 	model.load = function(self, id)
 		return newobject(nil, id, true)
 	end
-
+	
+	all_models[model]=true
+	
 	return setmetatable(model, {
 		__index = function(self, k)
 			local k_type = type(k)

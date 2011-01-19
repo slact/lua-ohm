@@ -15,6 +15,8 @@ end)
 
 function initialize(prototype, arg)
 	local model = prototype:getModel()
+	local references, indices
+
 	prototype:addCallback('load', function(self, redis)
 		local id = self:getId()
 		if not id then return nil, "No id given, can't load hash from redis." end
@@ -70,6 +72,21 @@ function initialize(prototype, arg)
 		}
 	end})
 	
+	for attr_name, attr_val in pairs(attributes) do
+		if lohm.isModel(attr_val) then
+			attributes[attr_name] = {
+				load = function(self, redis, attr)
+					self[attr]=assert(attr_val:findById(self[attr]))
+				end,
+				save = function(self, redis, attr)
+					local refId=attr_val:getId()
+				end,
+				delete = I
+			}
+			prototype:addCallbacks('save', attr_val:getCallbacks(), attr_val)
+		end
+	end
+
 	local unparsed_indices = arg.index or arg.indices
 	if unparsed_indices and next(unparsed_indices) then
 		local defaultIndex = Index:getDefault()
@@ -106,7 +123,22 @@ function initialize(prototype, arg)
 		self[attr]=val
 		return self
 	end
-	
+
+	do
+		local getOrdinaryCallbacks = prototype.getCallbacks
+		function prototype:getCallbacks(operation)
+			--TODO: memoize this instead of doing it on the fly.
+			local ret = append({}, getOrdinaryCallbacks(self, operation))
+			for i, obj_table in ipairs{attributes, indices} do
+				for j, obj in pairs(obj_table) do
+					append(ret, obj:getCallbacks(operation))
+				end
+			end
+			return ret
+		end
+
+	end
+
 	local hash_meta = { __index = function(self, attr)
 		local proto = prototype[attr]
 		if proto then
@@ -128,17 +160,6 @@ function initialize(prototype, arg)
 			table.insert(t1, v)
 		end
 		return t1
-	end
-	
-	hash_meta.getCallbacks = function(operation)
-		--TODO: memoize this instead of doing it on the fly.
-		local ret = append({}, prototype:getCallbacks(operation))
-		for i, obj_table in ipairs{attributes, indices} do
-			for j, obj in pairs(obj_table) do
-				append(ret, obj:getCallbacks(operation))
-			end
-		end
-		return ret
 	end
 	
 	return function(data, id, load_now)
