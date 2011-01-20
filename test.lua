@@ -155,7 +155,8 @@ context("Sets", function()
 		local s = Set:new()
 		table.insert(s, Foo:new({bar='baz'}))
 		s:save()
-		os.exit()
+		local fooId = s[1]:getId()
+		assert_true(Foo[fooId].bar=='baz')
 	end)
 end)
 --[[
@@ -215,8 +216,7 @@ context("References", function()
 		local t2 = Thing:new({z="9", moo=Moo:new({aux='bax'})}):save()
 	end)
 
-	test("Deletion", function()
-		os.exit()
+--[[	test("Deletion", function()
 		local r = newr()
 		local Foo = lohm.new({key="foo:%s"}, r)
 		local Bar = lohm.new({key="bar:%s", 
@@ -253,15 +253,15 @@ context("References", function()
 		assert_true(not Foo:findOne(ids.foo2))
 		assert(Foo:findOne(ids.foo1):getId())
 	end)
-
-	test("One-to-many references", function()
+]]
+	test("One-to-many references (sets)", function()
 		local r = newr()
-		local Bar = lohm({key="bar:%s"}, r)
+		local Bar = lohm({key="barbar:%s"}, r)
 		local Foo = lohm({
 			key="foo:%s",
 			attributes= {
-				manyBar=lohm.reference.many(Bar),
-				oneBar=lohm.reference.one(Bar)
+				manyBar = lohm.new({key="bars:%s", reference = Bar, type='set'}, r),
+				oneBar = Bar
 			}
 		}, r)
 
@@ -271,7 +271,10 @@ context("References", function()
 			table.insert(bars, bar)
 		end
 
-		local foo = Foo:new{oneBar = Bar:new({yes="no"}):save(), manyBar = bars}
+		local foo = Foo:new{oneBar = Bar:new({yes="no"}):save()}
+		for i,v in pairs(bars) do
+			table.insert(foo.manyBar, v)
+		end
 		assert_equal(foo:save(), foo)
 
 		local foo_take2 = Foo:findOne(foo:getId())

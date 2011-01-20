@@ -78,7 +78,7 @@ function initialize(prototype, arg)
 			getCallbacks = function() return {} end
 		}
 	end})
-	
+	debug.print("ATTR", attributes)
 	for attr_name, attr_model in pairs(attributes) do
 		if type(attr_model)=='table' then
 			local attr_obj = attr_model:new()
@@ -87,7 +87,8 @@ function initialize(prototype, arg)
 					local val = rawget(self, attr)
 					assert(type(val)~='table')
 					self[attr_name]=assert(attr_model:findById(val))
-				end
+				end,
+				model = attr_model
 			}
 
 			--everything cascades here
@@ -198,6 +199,13 @@ function initialize(prototype, arg)
 		if id then 
 			obj:setId(id)
 		end
+		debug.print(attributes)
+		for name, attr in pairs(attributes) do
+			if not obj[attr] then
+				obj[name]=attr.model:new()
+			end
+		end
+
 		if load_now then
 			return obj:load()
 		else

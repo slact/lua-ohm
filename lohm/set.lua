@@ -173,6 +173,16 @@ function initialize(prototype, attributes)
 			table.insert(self, v)
 		end
 	end)
+	
+	if ref_model then
+		prototype:addCallback('delete', function(self, redis)
+			redis:multi()
+			coroutine.yield()
+			for i,v in pairs(self) do
+				v:delete()
+			end
+		end)
+	end
 
 	local set_meta = {__index = set_prototype }
 	
