@@ -93,6 +93,18 @@ function initialize(prototype, attributes)
 		assert(not set_prototype[i])
 		set_prototype[i]=v
 	end
+
+	if attributes.reference then
+		self.reference=
+		if type(member)=='table' then
+				if type(member.getModel)=='function' then
+					assert(member:getModel() == ref_model, "Set reference model mismatch!")
+					
+				end
+			end
+		end
+	end
+
 	local set_meta = {__index = set_prototype }
 	
 	return function(data, id, load_now)
