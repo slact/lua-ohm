@@ -20,6 +20,7 @@ function initialize(prototype, arg)
 	local attributes, indices = arg.attributes or {}, {}
 
 	prototype:addCallback('load', function(self, redis)
+		if not self then return nil, "No hash to load..." end
 		local id = self:getId()
 		if not id then return nil, "No id given, can't load hash from redis." end
 		redis:multi()
@@ -98,15 +99,20 @@ function initialize(prototype, arg)
 						if type(val)=='table' then
 							assert(rawget(val,queued) ~= true) --redis-lua queued indicator
 							if val.getKey then
-								redis:watch(val:getKey())
+								local key = val:getKey()
+								if not key then
+									val:setId(assert(attr_model:reserveNextId( redis )))
+									key = val:getKey()
+								end
+								if key then redis:watch(val:getKey()) end
 							end
 						elseif val then
 							redis:watch(attr_model:key(val))
 							val = attr_model:new({}, val, false)
 							self[attr_name]=val
 						end
-						debug.print("VAL", event,  attr_name, val, val:getId(), "here okay")
-						assert(val==self[attr_name])
+						debug.print("VAL", event,  attr_name, val, "here okay")
+						assert(val==rawget(self, attr_name))
 						return callback(val, redis)
 					end)
 				end
@@ -190,7 +196,7 @@ function initialize(prototype, arg)
 	return function(data, id, load_now)
 		local obj = setmetatable(data or {}, hash_meta)
 		if id then 
-			obj:setId(id) 
+			obj:setId(id)
 		end
 		if load_now then
 			return obj:load()

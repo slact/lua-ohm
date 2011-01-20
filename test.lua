@@ -170,7 +170,7 @@ context("Indexing", function()
 end)
 ]]
 context("References", function()
-	test("direct references", function()
+	test("direct reference manipulation", function()
 		local r = newr()
 		local Moo = lohm.new({key="moo:%s"}, r)
 		local Thing = lohm.new({
@@ -190,13 +190,19 @@ context("References", function()
 
 		t1.moo.bar="17"
 		t1:save()
-
+		
 		local t1prime = Thing:findOne(t1:getId())
 		debug.print(t1prime, t1prime.moo.bar, t1prime.moo:getId(), "AAH")
 		assert_equal(t1prime.moo.bar, t1.moo.bar)
+
+		t1:delete()
+		assert_false(Thing[tonumber(t:getId())])
+
+		local t2 = Thing:new({z="9", moo=Moo:new({aux='bax'})}):save()
 	end)
 
 	test("Deletion", function()
+		os.exit()
 		local r = newr()
 		local Foo = lohm.new({key="foo:%s"}, r)
 		local Bar = lohm.new({key="bar:%s", 

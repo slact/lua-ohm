@@ -51,8 +51,8 @@ local function transactionize(self, redis, callbacks)
 		i=1
 		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
-			success, last_ret, last_err = cresume(transaction_callback, self, redis, my_id)
-			print("WEE", success, last_ret, last_err)
+			success, last_ret, last_err = assert(cresume(transaction_callback, self, redis, my_id))
+			print("PREMULTI", success, last_ret, last_err)
 			if cstatus(transaction_callback)~='dead' then
 				i = i + 1
 			else
@@ -65,8 +65,8 @@ local function transactionize(self, redis, callbacks)
 		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
 			local already_queued = redis:commands_queued()
-			success, last_ret, last_err = cresume(transaction_callback)
-			print("WEE", success, last_ret, last_err)
+			success, last_ret, last_err = assert(cresume(transaction_callback))
+			print("MULTI", success, last_ret, last_err)
 			if cstatus(transaction_callback) ~= 'dead' then
 				queued_commands_offset[transaction_callback]={ already_queued, redis:commands_queued() }
 				i = i + 1
@@ -78,8 +78,8 @@ local function transactionize(self, redis, callbacks)
 
 	if not res then return nil, err end
 	for i, transaction_callback in ipairs(transaction_coroutines) do
-		success, last_ret, last_err = cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback])))
-		print("WEE", success, last_ret, last_err)
+		success, last_ret, last_err = assert(cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback]))))
+		print("POSTMULTI", success, last_ret, last_err)
 		--we no longer care about the coroutine's status. we're done.
 	end
 	return last_ret, last_err
@@ -161,9 +161,7 @@ function new(datatype, model, arg)
 			print(operation, "IN PROGRESS")
 			local key = self:getKey()
 			if not key and operation=='save' then
-				self:setId(self:getModel():withRedis(redis, function(model)
-					return model:reserveNextId()
-				end))
+				self:setId(model:reserveNextId(redis))
 				key = self:getKey()
 			end
 			if not key then error(("Cannot %s data without a key"):format(operation)) end

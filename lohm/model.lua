@@ -96,8 +96,14 @@ do
 	end
 	
 	model_prototype = {
-		reserveNextId = function(self)
-			return newId.autoincrement(self)
+		reserveNextId = function(self, redis)
+			if redis then
+				return self:withRedis(redis, function(self)
+					return newId.autoincrement(self)
+				end)
+			else
+				return newId.autoincrement(self)
+			end
 		end,
 		
 		--@return (possibly empty) table of results
@@ -193,6 +199,7 @@ function new(arg, redisconn)
 	local idmatch = key:gsub("([%^%$%(%)%.%[%]%*%+%-%?])", "%%%1") --note that we aren't filtering the % char. because it's used in sprintf. 
 	idmatch = ("^" .. idmatch .. "$"):format("(.*)")
 	model.id = function(self, key)
+		print(debug.traceback())
 		return key:find(idmatch)
 	end
 	model.key = function(self, id)
