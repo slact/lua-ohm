@@ -34,7 +34,7 @@ end)
 
 local ccreate, cresume, cstatus = coroutine.create, coroutine.resume, coroutine.status
 
-local function transactionize(self, redis, callbacks)
+function transactionize(self, redis, callbacks)
 	debug.print(callbacks)
 	local transaction_coroutines = {} --TODO: reuse this table, memoize more, etc.
 	for i,naked_callback in pairs(callbacks) do
@@ -66,7 +66,7 @@ local function transactionize(self, redis, callbacks)
 			local transaction_callback = transaction_coroutines[i]
 			local already_queued = redis:commands_queued()
 			success, last_ret, last_err = assert(cresume(transaction_callback))
-			print("MULTI", success, last_ret, last_err)
+			print("MULTI    ", success, last_ret, last_err)
 			if cstatus(transaction_callback) ~= 'dead' then
 				queued_commands_offset[transaction_callback]={ already_queued, redis:commands_queued() }
 				i = i + 1
