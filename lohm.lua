@@ -19,7 +19,7 @@ end)
 	-- indices (table): attributes to index (and with what index, if given. defaults to Index:defaultIndex()
 
 function new(arg, redis_connection)
-	local res, err Model.new(arg, redis_connection)
+	local res, err = Model.new(arg, redis_connection)
 	return res, err
 end
 

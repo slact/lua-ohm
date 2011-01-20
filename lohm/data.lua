@@ -35,6 +35,7 @@ end)
 local ccreate, cresume, cstatus = coroutine.create, coroutine.resume, coroutine.status
 
 local function transactionize(self, redis, callbacks)
+	debug.print(callbacks)
 	local transaction_coroutines = {} --TODO: reuse this table, memoize more, etc.
 	for i,naked_callback in pairs(callbacks) do
 		table.insert(transaction_coroutines, ccreate(naked_callback))
@@ -119,7 +120,7 @@ function new(datatype, model, arg)
 			keys[self]=nil
 			return self
 		end,
-		clearKey = function(self) return self:clearId() end
+		clearKey = function(self) return self:clearId() end,
 		
 		
 		getCallbacks = function(self, event_name)

@@ -1,6 +1,6 @@
 local print, getmetatable, rawget = print, getmetatable, rawget
 local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack, next = pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack, next
-
+local lohm = require "lohm"
 local debug = debug
 local function I(...) return ... end
 local Index = require "lohm.index"
@@ -16,6 +16,8 @@ end)
 function initialize(prototype, arg)
 	local model = prototype:getModel()
 	local references, indices
+	--custom attribute stuff
+	local attributes, indices = arg.attributes or {}, {}
 
 	prototype:addCallback('load', function(self, redis)
 		local id = self:getId()
@@ -30,7 +32,9 @@ function initialize(prototype, arg)
 			return nil, "Redis hash at " .. self:getKey() .. " not found."
 		else
 			for k, v in pairs(loaded_data) do
-				self[k]=v
+				if not attributes[k] then
+					self[k]=v
+				end
 			end
 		end
 		return self
@@ -43,13 +47,17 @@ function initialize(prototype, arg)
 
 		local hash_change = {}
 		for i,v in pairs(self) do
-			if type(v)~='table' then
+			if type(v)~='table' then 
+				--[[ tables are assumed to be special values and must be 
+				handled by declaring them upfront when creating a lohm 
+				model. (the alternative would be too dynamic for a fixed data structure)]]
 				hash_change[i]=v
 			end
 		end
 		if next(hash_change) then --make sure changeset is non-empty
-			redis:hmset(key, self)
+			redis:hmset(key, hash_change)
 		end
+		--TODO: attribute removal.
 		return self
 	end):addCallback('delete', function(self, redis)
 		redis:multi()
@@ -57,8 +65,6 @@ function initialize(prototype, arg)
 		return self
 	end)
 
-	--custom attribute stuff
-	local attributes, indices = arg.attributes or {}, {}
 	setmetatable(attributes, {__index=function(t,k)
 		return {
 			load=function(self, redis, attr)
@@ -69,41 +75,53 @@ function initialize(prototype, arg)
 			end,
 			delete=I,
 			getCallbacks = function() return {} end
-		}c
+		}
 	end})
 	
 	for attr_name, attr_model in pairs(attributes) do
-		if lohm.isModel(attr_model) then
+		if type(attr_model)=='table' then
+			local attr_obj = attr_model:new()
 			attributes[attr_name] = {
 				load = function(self, redis, attr)
-					self[attr]=assert(attr_model:findById(self[attr]))
-				end,
-				save = function(self, redis, attr)
-					assert(attr==attr_name, 'sanity check')
-					local reference = self[attr_name]
-					if type(reference)~='table' then
-						error(("Expected hash attribute %s to be a lohm model or reference (keyed %s) "):format(attr,attr_model.key('*') ))
-					redis:hset(self:getKey(), attr_name, refId)
-				end,
-				delete = I
+					local val = rawget(self, attr)
+					assert(type(val)~='table')
+					self[attr_name]=assert(attr_model:findById(val))
+				end
 			}
+
 			--everything cascades here
 			for i,event in pairs{'load', 'save', 'delete'} do
-				prototype:addCallbacks(event, attr_val:getCallbacks(event), attr_val)
+				for j, callback in pairs(attr_obj:getCallbacks(event)) do
+					prototype:addCallback(event, function(self, redis)
+						local val = rawget(self, attr_name) or redis:hget(self:getKey(), attr_name)
+						print("VAL IS", val)
+						if type(val)=='table' then
+							assert(rawget(val,queued) ~= true) --redis-lua queued indicator
+							if val.getKey then
+								redis:watch(val:getKey())
+							end
+						elseif val then
+							redis:watch(attr_model:key(val))
+							val = attr_model:new({}, val, false)
+							self[attr_name]=val
+						end
+						debug.print("VAL", event,  attr_name, val, val:getId(), "here okay")
+						assert(val==self[attr_name])
+						return callback(val, redis)
+					end)
+				end
 			end
-			prototype:addCallback('load', function(self, redis)
-				--this is a transaction coroutine, mind you.
-				redis:multi() --MULTI
-				coroutine.yield() -- EXEC
-				--afterwards
-				self[attr_name]=attr_val
-			end)
+			
 			prototype:addCallback('save', function(self, redis)
 				--this is a transaction coroutine, mind you.
-				local id = attr_val:get
+				local  ref_obj = self[attr_name]
+				if not ref_obj then return nil end
+				local id = ref_obj:getId()
 				redis:multi()
+				if id then
+					redis:hset(self:getKey(), attr_name, id)
+				end
 				coroutine.yield()
-				self[attr_name]=attr_val
 			end)
 		end
 	end

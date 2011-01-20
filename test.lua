@@ -108,6 +108,7 @@ context("Initialization", function()
 			}
 		}, newr())
 		assert_equal(M:new({foo=11}):getFoo(), 11)
+		assert_true(lohm.isModel(M))
 		M:getFirst()
 	end)
 end)
@@ -143,7 +144,7 @@ context("Sets", function()
 		assert_false(r:sismember(sprime:getKey(), 'bax'))
 	end)
 end)
-
+--[[
 context("Indexing", function()
 	test("Storage and Retrieval with hash index", function()
 		local M = lohm.new({
@@ -167,15 +168,15 @@ context("Indexing", function()
 		end
 	end)
 end)
-
+]]
 context("References", function()
-	test("Making a reference", function()
+	test("direct references", function()
 		local r = newr()
 		local Moo = lohm.new({key="moo:%s"}, r)
 		local Thing = lohm.new({
 			key="thing:%s",
 			attributes = {
-				moo = lohm.reference.one(Moo)
+				moo = Moo
 			}
 		}, r)
 		
@@ -183,10 +184,16 @@ context("References", function()
 		local m = Moo:new({ bar="baz" }):save()
 		t.moo = m
 		t:save()
-
+		
 		local t1 = Thing:findOne(t:getId())
 		assert_equal(t1.moo:getId(), '1')
 
+		t1.moo.bar="17"
+		t1:save()
+
+		local t1prime = Thing:findOne(t1:getId())
+		debug.print(t1prime, t1prime.moo.bar, t1prime.moo:getId(), "AAH")
+		assert_equal(t1prime.moo.bar, t1.moo.bar)
 	end)
 
 	test("Deletion", function()
@@ -194,13 +201,13 @@ context("References", function()
 		local Foo = lohm.new({key="foo:%s"}, r)
 		local Bar = lohm.new({key="bar:%s", 
 			attributes={ 
-				foo = lohm.reference(Foo) 
+				foo = Foo
 			}
 		}, r)
 		
 		local HardBar = lohm.new({key="hardBar:%s",
 			attributes = {
-				foo = lohm.reference(Foo, true)
+				foo = Foo
 			}
 		}, r)
 
