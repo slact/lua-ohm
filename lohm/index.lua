@@ -1,6 +1,12 @@
 local print, type, assert, pcall, require, table, tostring, pairs, ipairs, setmetatable = print, type, assert, pcall, require, table, tostring, pairs, ipairs, setmetatable
 local error = error
-module("lohm.index", package.seeall)
+module("lohm.index", function(t, k)
+	setmetatable(t, {
+		__call = function(self)
+			
+		end
+	})
+end)
 local indexf = "lohm.index:%s:%s:%%s"
 
 local indices = {}

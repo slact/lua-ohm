@@ -138,18 +138,8 @@ function initialize(prototype, attributes)
 		for v,_ in pairs(delta.add) do
 			redis:sadd(key, v)
 		end
-		
-		coroutine.yield()
-		if ref_model then
-			for i,v in pairs(self) do
-				if type(v)=='table' then
-					v:save()
-				end
-			end
-		end
 
 		delta.add, delta.rem = {}, {}
-		return self
 	end)
 
 	prototype:addCallback('load', function(self, redis)
@@ -163,6 +153,9 @@ function initialize(prototype, attributes)
 		end
 		savedset = {}
 		local res = redis:smembers(key)
+		if ref_model then
+			
+		end
 		redis:multi()
 		coroutine.yield()
 		for i,v in pairs(res) do
