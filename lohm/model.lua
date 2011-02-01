@@ -175,8 +175,6 @@ end
 function new(arg, redisconn)
 
 	local model, object = arg.model or {}, arg.object or {}
-	debug.print("ARG IS", arg)
-	print(debug.traceback())
 	assert(type(arg.key)=='string', "Redis " .. (arg.type or "") .. " object Must Have a key parameter (something like 'foo:%s').")
 	assert(redisconn, "Valid redis connection needed")
 	assert(redisconn:ping())
@@ -188,7 +186,6 @@ function new(arg, redisconn)
 	local idmatch = key:gsub("([%^%$%(%)%.%[%]%*%+%-%?])", "<0/0>%1") --note that we aren't filtering the % char. because it's used in sprintf. 
 	idmatch = ("^" .. idmatch .. "$"):format("(.*)"):gsub("<0/0>", "%%")
 	model.id = function(self, key)
-		print(debug.traceback())
 		return key:find(idmatch)
 	end
 	model.key = function(self, id)
@@ -196,7 +193,8 @@ function new(arg, redisconn)
 	end
 	local newobject = Data[arg.type or "hash"](model, arg)
 	model.new = function(self, res, id)
-		return newobject(res or {}, id)
+		local obj, err = newobject(res or {}, id)
+		return obj, err
 	end
 	model.load = function(self, id)
 		return newobject(nil, id, true)

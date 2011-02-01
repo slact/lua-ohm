@@ -103,7 +103,6 @@ function initialize(prototype, attributes)
 	prototype:addCallback('save', function(self, redis)
 			
 		local saved = tcopy(savedset)
-		debug.print("SAVEY", saved, savedset)
 		local key = self:getKey()
 		local member
 		for i,v in pairs(self) do
@@ -127,10 +126,8 @@ function initialize(prototype, attributes)
 		
 		--leftovers to be removed
 		for i,v in pairs(saved) do
-			print(i,v)
 			delta.rem[v]=true
 		end
-		debug.print(delta)
 		for v, _ in pairs(delta.rem) do
 			redis:srem(key, v)
 		end

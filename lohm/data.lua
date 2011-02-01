@@ -35,7 +35,6 @@ end)
 local ccreate, cresume, cstatus = coroutine.create, coroutine.resume, coroutine.status
 
 function transactionize(self, redis, callbacks)
-	debug.print(callbacks)
 	local transaction_coroutines = {} --TODO: reuse this table, memoize more, etc.
 	for i,naked_callback in pairs(callbacks) do
 		table.insert(transaction_coroutines, ccreate(naked_callback))
@@ -52,7 +51,7 @@ function transactionize(self, redis, callbacks)
 		while i<=#transaction_coroutines do
 			local transaction_callback = transaction_coroutines[i]
 			success, last_ret, last_err = assert(cresume(transaction_callback, self, redis, my_id))
-			print("PREMULTI", success, last_ret, last_err)
+			--print("PREMULTI", success, last_ret, last_err)
 			if cstatus(transaction_callback)~='dead' then
 				i = i + 1
 			else
@@ -66,7 +65,7 @@ function transactionize(self, redis, callbacks)
 			local transaction_callback = transaction_coroutines[i]
 			local already_queued = redis:commands_queued()
 			success, last_ret, last_err = assert(cresume(transaction_callback))
-			print("MULTI    ", success, last_ret, last_err)
+			--print("MULTI    ", success, last_ret, last_err)
 			if cstatus(transaction_callback) ~= 'dead' then
 				queued_commands_offset[transaction_callback]={ already_queued, redis:commands_queued() }
 				i = i + 1
@@ -78,7 +77,7 @@ function transactionize(self, redis, callbacks)
 	if not res then return nil, err end
 	for i, transaction_callback in ipairs(transaction_coroutines) do
 		success, last_ret, last_err = assert(cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback]))))
-		print("POSTMULTI", success, last_ret, last_err)
+		--print("POSTMULTI", success, last_ret, last_err)
 		--we no longer care about the coroutine's status. we're done.
 	end
 	if not last_ret and not last_err then 
@@ -144,15 +143,6 @@ function new(datatype, model, arg)
 			return self
 		end,
 		
-		addCallbackIterator = function(self, event_name, iterator)
-			--this is beginning to seem more and more like a decent hack 
-			--and less and less a sound architectural decision.
-			assert(type(iterator) ~= 'function', "no iterator provided")
-			assert(event_name, "realistic event name please")
-			table.insert(callback_iterators[event_name], iterator)
-			return self
-		end,
-		
 		addCallbacks = function(self, event_name, callbacks, bind_to)
 			for i, cb in pairs(callbacks) do
 				assert(self:addCallback(event_name, cb))
@@ -170,7 +160,6 @@ function new(datatype, model, arg)
 	}
 	for i, operation in pairs{'load', 'delete', 'save'} do
 		data_prototype[operation]=function(self, redis)
-			print(operation, "IN PROGRESS")
 			local key = self:getKey()
 			if not key and operation=='save' then
 				self:setId(model:reserveNextId(redis))
@@ -178,11 +167,10 @@ function new(datatype, model, arg)
 			end
 			if not key then error(("Cannot %s data without a key"):format(operation)) end
 			local res, err = transactionize(self, model.redis, self:getCallbacks(operation))
-			print(type(res), err)
 			return (res and self), err
 		end
 	end
-	
+
 	--merge custom object properties into the prototype
 	for i,v in pairs(arg.prototype or arg.object or {}) do
 		if not rawget(data_prototype, i) then
@@ -192,6 +180,14 @@ function new(datatype, model, arg)
 		end
 	end
 	
-	local obj = require("lohm." .. datatype)
-	return obj.initialize(data_prototype, arg)
+	--should this expire automatcally?
+	if arg.expire then
+		data_prototype:addCallback('save', function(self, redis)
+			redis:multi()
+			assert(redis:expire(self:getKey(), arg.expire or 30))
+		end)
+	end
+
+	local obj_module = require("lohm." .. datatype)
+	return obj_module.initialize(data_prototype, arg)
 end

@@ -6,7 +6,6 @@ module ("lohm", function(t)
 		__call = function(self, ...) return t.new(...) end,
 		__index = function(self, k)
 			return function(arg, redis) 
-				debug.print("ARRG",self,  k, arg)
 				arg.type=k
 				return Model.new(arg, redis)
 			end
@@ -21,7 +20,6 @@ end)
 	-- indices (table): attributes to index (and with what index, if given. defaults to Index:defaultIndex()
 
 function new(arg, redis_connection)
-	debug.print("GRARG", arg)
 	local res, err = Model.new(arg, redis_connection)
 	return res, err
 end

@@ -17,7 +17,7 @@ function debug.dump(tbl)
 			if info.name then
 				return ("%s %s: %s"):format(info.namewhat, info.name, source)
 			else
-				return source
+				return "function " .. source
 			end
 		elseif t == "table" then
 			if tablestack and tablestack[thing] then return string.format("%s (recursion)", tostring(thing)) end
@@ -42,7 +42,7 @@ function debug.print(...)
 	end
 	local res = table.concat(buffer, "	")
 	print(res)
-	return res
+	return ...
 end
 
 local function newr()
@@ -133,7 +133,6 @@ context("Basic manipulation", function()
 		assert_true( "barbar"==checkM.foo )
 		assert(checkM:delete())
 		local notfound = Model[tonumber(id)]
-		debug.print("NOTFOUND", type(notfound), notfound)
 		assert_true(not notfound)
 	end)
 end)
@@ -159,18 +158,18 @@ context("Sets", function()
 		local Foo = lohm.new({key="foohash:%s"}, r)
 		local Set = lohm.new({key="refset:%s", type='set', reference = Foo}, r)
 		local s = Set:new()
-		table.insert(s, Foo:new({bar='baz'}))
+		table.insert(s, (Foo:new({bar='baz'})))
 		s:save()
 		local fooId = s[1]:getId()
 		assert_true(Foo[fooId].bar=='baz')
 	end)
 end)
---[[
+
 context("Indexing", function()
-	test("Storage and Retrieval with hash index", function()
+	test("Storage and Retrieval with index", function()
 		local M = lohm.new({
 			key="testindexing:%s",
-			index = {"i1","i2", i3="hash"}
+			index = {"i1","i2", "i3"}
 		}, newr())
 		
 		local findme=math.random(1,300)
@@ -182,14 +181,15 @@ context("Indexing", function()
 			end
 		end
 		assert_equal(#assert(M:findByAttr{i3=1})+#assert(M:findByAttr{i3=2}), 300)
-		local res = M:find(findey)
+		local res = M:findByAttr(findey)
 		assert_equal(#res, 1)
+		assert_equal(res[1].i3, tostring(findey.i3))
 		for i, v in pairs(res[1]) do
 			assert_equal(tostring(v), tostring(findey[i]))
 		end
 	end)
 end)
-]]
+
 context("References", function()
 	test("direct reference manipulation", function()
 		local r = newr()
@@ -212,7 +212,6 @@ context("References", function()
 		t1:save()
 		
 		local t1prime = Thing:findOne(t1:getId())
-		debug.print(t1prime, t1prime.moo.bar, t1prime.moo:getId(), "AAH")
 		assert_equal(t1prime.moo.bar, t1.moo.bar)
 
 		t1:delete()

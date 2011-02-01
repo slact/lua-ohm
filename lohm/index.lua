@@ -1,5 +1,6 @@
 local print, type, assert, pcall, require, table, tostring, pairs, ipairs, setmetatable = print, type, assert, pcall, require, table, tostring, pairs, ipairs, setmetatable
 local error = error
+local debug = debug
 local lohm = require "lohm"
 module("lohm.index", function(t, k)
 	setmetatable(t, {
@@ -40,7 +41,7 @@ function getDefault()
 end
 
 
-local query_meta = {
+local query_prototype = {
 	union = function(self, set)
 		table.insert(self.queue, {command='sunionstore', key=set:getKey()})
 		return self
@@ -52,68 +53,74 @@ local query_meta = {
 	end,
 	
 	exec = function(self)
-		self.redis:transaction({cas=true, watch=self.set:getKey()}, function(redis)
+		local temp_key, base_set_key = nil, self.set:getKey()
+		local res, err = self.redis:transaction({cas=true}, function(redis)
 			local queue = self.queue
-			for i, cmd in ipairs(queue) do
+			--[[for i, cmd in ipairs(queue) do
 				redis:watch(cmd.key)
-			end
-			redis:multi()
+			end]]
 			if #queue >= 1 then
+				local TempSet = self.temp_set_model
 				local temp = TempSet:new(nil, TempSet:reserveNextId(), false)
-				local temp_key = temp.getKey()
-				redis:expire(temp_key, 10) -- expire that set in 10 seconds flat.
-				local base_set_key = self.set:getKey()
+				redis:multi()
+				temp_key = temp:getKey()
 				self.set = temp
 				for i=1, #queue do
 					local cmd = queue[i]
-					redis[cmd.command](temp_key, cmd.key, base_set_key or temp_key)
+					assert(cmd.key)
+					redis[cmd.command](redis, temp_key, cmd.key, base_set_key or temp_key)
 					base_set_key = nil
 				end
+				redis:expire(temp_key, 30)
+			else
+				redis:multi()
 			end
+			redis:smembers(temp_key or base_set_key)
 		end)
 		--note that the temporary result set is not deleted explicitly, but it does expire.
-		local res = redis:smembers(temp_key)
-		for i,v in pairs(assert(redis:smembers(res_key))) do
+		res = res[#res]
+		for i,v in pairs(res) do
 			res[i]=self.model:new(nil, v, false)
 		end
-		return res, temp
+		return res
 	end
 }
-
+local query_meta = { __index = query_prototype }
 function query(starting_set, model)
 	local self = setmetatable({
 		set = starting_set,
 		queue = {},
 		redis = model.redis,
-		model = model
+		model = model,
+		temp_set_model = lohm.new({type="set", key="~index_result:%s", expire=10}, model.redis),
 	}, query_meta)
 	return self
 end
 
-local index 
-
 function new(model, name)
-	if not indices[indexType] then
-		error(("Unknown index '%s'. Known indices: %s."):format(tostring(indexType), allIndices()))
-	end
 	assert(type(name)=='string', 'What do you want indexed? (no name parameter)')
-	
-	local Index = lohm.new({ type='set', key=model:key(("%s:index.%s:%%s"):format(name or "NONAME", indexType))}, model.redis)
+	local Index = lohm.new({ type='set', key=model:key(("index.hash:%s:%%s"):format(name or "NONAME"))}, model.redis)
 	
 	return setmetatable({
 		model = Index,
 		update = function(self, id, newval, oldval)
-			local id = assert(self:getId(), "id must be given")
+			assert(id, "id must be given")
+			assert(type(newval)~='table')
+			assert(type(oldval)~='table')
+			local redis = self.model.redis
 			if(oldval~=nil) then
-				self(oldval):remove(id):save()
+				redis:srem(self:getSetKey(oldval), id)
 			end
 			if(newval~=nil) then
-				self(newval):add(id):save()
+				redis:sadd(self:getSetKey(newval), id)
 			end
 			return self
 		end,
 		getSet = function(self, val)
 			return self.model:new(nil, hash(val), false)
+		end,
+		getSetKey = function(self, val)
+			return (self.model:key(hash(val)))
 		end,
 	}, {__call = function(self, ...)
 		return self:getSet(...) 

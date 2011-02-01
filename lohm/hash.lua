@@ -1,6 +1,8 @@
 local print, getmetatable, rawget = print, getmetatable, rawget
 local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack, next = pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack, next
 local lohm = require "lohm"
+local Query = require "lohm.index".query
+local Index = require "lohm.index"
 local debug = debug
 local function I(...) return ... end
 local Index = require "lohm.index"
@@ -102,8 +104,6 @@ function initialize(prototype, arg)
 								local id = redis:hget(self:getKey(), attr_name)
 								if id then val:setId(id) end
 							end
-							debug.print("UNVAL", attributes)
-							print("VALLY", rawget(self, attr_name), event, val, type(val))
 							assert(rawget(val,queued) ~= true) --redis-lua queued indicator
 							if val.getKey then
 								local key = val:getKey()
@@ -118,7 +118,6 @@ function initialize(prototype, arg)
 							val = attr_model:new({}, val, false)
 							self[attr_name]=val
 						end
-						debug.print("VAL", event,  attr_name, val, "here okay")
 						assert(val==rawget(self, attr_name))
 						return callback(val, redis)
 					end)
@@ -147,31 +146,39 @@ function initialize(prototype, arg)
 			if type(attr)=='table' then
 				attr, index = i, attr
 			else
-				index = Index:new(indexType, model, attr)
+				index = Index.new(model, attr)
 			end
 
 			indices[attr] = index
 			
 			prototype:addCallback('save', function(self, redis)
 				local savedval = redis:hget(self:getKey(), attr)
-				assert(index:update(self, redis, self:getId(), self[attr], savedval))
+				local newval = rawget(self, attr) --mustn't trigger autoloader
+				if type(newval)=='table' then 
+					newval = newval:getId()
+				end
+				assert(type(newval)~='table')
+				assert(self:getId())
+				assert(index:update(self:getId(), newval, savedval))
 			end)
 
 			prototype:addCallback('delete', function(self, redis)
 				local savedval = redis:hget(self:getKey(), attr)
-				assert(index:update(self, redis, self:getId(), nil, savedval))
+				assert(index:update(self:getId(), nil, savedval))
 			end)
 		end
 	end
 	model.findByAttr = function(self, arg)
 		local query
 		for attr, val in pairs(arg) do
+			local this_set = indices[attr](val)
 			if query then
-				query:intersect(indices[attr](val))
+				query:intersect(this_set)
 			else
-				query = lohm.query(indices[attr](val))
+				query = Query(this_set, model)
 			end
 		end
+		model.redis:echo("FOO")
 		return query:exec()
 	end
 	
@@ -195,7 +202,6 @@ function initialize(prototype, arg)
 			return proto
 		else
 			local key = self:getKey()
-			print(key, attr)
 			if key then
 				local res = attributes[attr].load(self, model.redis, attr)
 				self[attr]=res
