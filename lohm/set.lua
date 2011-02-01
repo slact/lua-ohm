@@ -126,7 +126,6 @@ function initialize(prototype, attributes)
 		redis:multi()
 		
 		--leftovers to be removed
-		debug.print(saved)
 		for i,v in pairs(saved) do
 			print(i,v)
 			delta.rem[v]=true
@@ -141,7 +140,9 @@ function initialize(prototype, attributes)
 
 		delta.add, delta.rem = {}, {}
 	end)
-
+	
+	
+	
 	prototype:addCallback('load', function(self, redis)
 		if not self then return nil, "No set to load..." end
 		local key = self:getKey()
@@ -153,9 +154,6 @@ function initialize(prototype, attributes)
 		end
 		savedset = {}
 		local res = redis:smembers(key)
-		if ref_model then
-			
-		end
 		redis:multi()
 		coroutine.yield()
 		for i,v in pairs(res) do
@@ -175,6 +173,35 @@ function initialize(prototype, attributes)
 				v:delete()
 			end
 		end)
+		local tinsert = table.insert
+		local function copy(t) 
+			local ret = {}
+			for i, v in pairs(t) do 
+				tinsert(ret, v)
+			end
+			return ret
+		end
+		local function merge(t1, t2, bind)
+			for i,v in  pairs(t2) do
+				tinsert(t1, function(self, ...)
+					return v(bind, ...)
+				end)
+			end
+			return t1
+		end
+		set_prototype.getCallbacks = function(self, event_name)
+			if event_name=='save' then
+				local res = copy(prototype:getCallbacks(event_name))
+				for i,ref in ipairs(self) do
+					if type(ref)=='table' then
+						merge(res, ref:getCallbacks('save'), ref)
+					end
+				end
+				return res
+			else
+				return prototype:getCallbacks(event_name)
+			end
+		end
 	end
 
 	local set_meta = {__index = set_prototype }

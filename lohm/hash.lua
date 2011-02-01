@@ -58,7 +58,7 @@ function initialize(prototype, arg)
 		if next(hash_change) then --make sure changeset is non-empty
 			redis:hmset(key, hash_change)
 		end
-		--TODO: attribute removal.
+		--IMPORTANT TODO: attribute removal.
 		return self
 	end):addCallback('delete', function(self, redis)
 		redis:multi()
@@ -69,6 +69,7 @@ function initialize(prototype, arg)
 	setmetatable(attributes, {__index=function(t,k)
 		return {
 			load=function(self, redis, attr)
+				assert(type(attr)~='table')
 				return redis:hget(self:getKey(), attr)
 			end, 
 			save=function(self, redis, attr, val)
@@ -78,10 +79,8 @@ function initialize(prototype, arg)
 			getCallbacks = function() return {} end
 		}
 	end})
-	debug.print("ATTR", attributes)
 	for attr_name, attr_model in pairs(attributes) do
 		if type(attr_model)=='table' then
-			local attr_obj = attr_model:new()
 			attributes[attr_name] = {
 				load = function(self, redis, attr)
 					local val = rawget(self, attr)
@@ -92,12 +91,19 @@ function initialize(prototype, arg)
 			}
 
 			--everything cascades here
+			local attr_obj = attr_model:new()
 			for i,event in pairs{'load', 'save', 'delete'} do
 				for j, callback in pairs(attr_obj:getCallbacks(event)) do
 					prototype:addCallback(event, function(self, redis)
 						local val = rawget(self, attr_name) or redis:hget(self:getKey(), attr_name)
-						print("VAL IS", val)
+						
 						if type(val)=='table' then
+							if not val:getId() then
+								local id = redis:hget(self:getKey(), attr_name)
+								if id then val:setId(id) end
+							end
+							debug.print("UNVAL", attributes)
+							print("VALLY", rawget(self, attr_name), event, val, type(val))
 							assert(rawget(val,queued) ~= true) --redis-lua queued indicator
 							if val.getKey then
 								local key = val:getKey()
@@ -105,7 +111,7 @@ function initialize(prototype, arg)
 									val:setId(assert(attr_model:reserveNextId( redis )))
 									key = val:getKey()
 								end
-								if key then redis:watch(val:getKey()) end
+								if key then redis:watch(val:getKey()) end 
 							end
 						elseif val then
 							redis:watch(attr_model:key(val))
@@ -135,13 +141,15 @@ function initialize(prototype, arg)
 
 	local unparsed_indices = arg.index or arg.indices
 	if unparsed_indices and next(unparsed_indices) then
-		local defaultIndex = Index:getDefault()
-		for attr, indexType in pairs(unparsed_indices) do
-			if type(attr)~="string" then 
-				attr, indexType = indexType, defaultIndex
+		for i, attr in pairs(unparsed_indices) do
+			--we accept {"foo","bar"} and {foo=Index(...), bar=Index(...), "baz", bax"} tables
+			local index
+			if type(attr)=='table' then
+				attr, index = i, attr
+			else
+				index = Index:new(indexType, model, attr)
 			end
-			
-			local index = Index:new(indexType, model, attr)
+
 			indices[attr] = index
 			
 			prototype:addCallback('save', function(self, redis)
@@ -152,11 +160,21 @@ function initialize(prototype, arg)
 			prototype:addCallback('delete', function(self, redis)
 				local savedval = redis:hget(self:getKey(), attr)
 				assert(index:update(self, redis, self:getId(), nil, savedval))
-				self:clearKey()
 			end)
 		end
 	end
-
+	model.findByAttr = function(self, arg)
+		local query
+		for attr, val in pairs(arg) do
+			if query then
+				query:intersect(indices[attr](val))
+			else
+				query = lohm.query(indices[attr](val))
+			end
+		end
+		return query:exec()
+	end
+	
 	function prototype:get(attr, force)
 		local res = rawget(self, attr)
 		if force or not res then 
@@ -165,7 +183,7 @@ function initialize(prototype, arg)
 		end
 		return res
 	end
-
+	
 	function prototype:set(attr, val)
 		self[attr]=val
 		return self
@@ -199,13 +217,12 @@ function initialize(prototype, arg)
 		if id then 
 			obj:setId(id)
 		end
-		debug.print(attributes)
 		for name, attr in pairs(attributes) do
-			if not obj[attr] then
+			if not rawget(obj, attr) then
 				obj[name]=attr.model:new()
 			end
 		end
-
+		
 		if load_now then
 			return obj:load()
 		else

@@ -199,7 +199,6 @@ context("References", function()
 		local m = Moo:new({ bar="baz" }):save()
 		t.moo = m
 		t:save()
-		
 		local t1 = Thing:findOne(t:getId())
 		assert_equal(t1.moo:getId(), '1')
 
@@ -275,6 +274,8 @@ context("References", function()
 		for i,v in pairs(bars) do
 			table.insert(foo.manyBar, v)
 		end
+		debug.print("PRINTY", foo.save)
+		os.exit()
 		assert_equal(foo:save(), foo)
 
 		local foo_take2 = Foo:findOne(foo:getId())

@@ -134,21 +134,8 @@ do
 			return self:load(id)
 		end,
 		
-		findByAttr = function(self, arg, limit, offset)
-			local indices = self.indices
-			local sintersect = {}
-			for attr, val in pairs(arg) do
-				local thisIndex = indices[attr]
-				assert(thisIndex, "model attribute " .. attr .. " isn't indexed. index it first, please.")
-				table.insert(sintersect, thisIndex:getKey(val))
-			end
-			
-			local lazy = false
-			local randomkey = "searchunion:" .. newId.random()
-			self.redis:sinterstore(randomkey, unpack(sintersect))
-			local res, err = self:fromSet(randomkey, limit, offset)
-			--self.redis:del(randomkey)
-			return res, err
+		findByAttr = function()
+			error("Can't look for object by attributes with this model.")
 		end,
 		
 		fromSortDelayed = function(self, key, pattern, maxResults, offset, descending, lexicographic)

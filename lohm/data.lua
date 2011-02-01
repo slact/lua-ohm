@@ -141,6 +141,15 @@ function new(datatype, model, arg)
 			return self
 		end,
 		
+		addCallbackIterator = function(self, event_name, iterator)
+			--this is beginning to seem more and more like a decent hack 
+			--and less and less a sound architectural decision.
+			assert(type(iterator) ~= 'function', "no iterator provided")
+			assert(event_name, "realistic event name please")
+			table.insert(callback_iterators[event_name], iterator)
+			return self
+		end,
+		
 		addCallbacks = function(self, event_name, callbacks, bind_to)
 			for i, cb in pairs(callbacks) do
 				assert(self:addCallback(event_name, cb))
