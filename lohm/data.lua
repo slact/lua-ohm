@@ -75,14 +75,17 @@ function transactionize(self, redis, callbacks)
 			end
 		end
 	end)
-
 	if not res then return nil, err end
 	for i, transaction_callback in ipairs(transaction_coroutines) do
 		success, last_ret, last_err = assert(cresume(transaction_callback, tslice(res, unpack(queued_commands_offset[transaction_callback]))))
 		print("POSTMULTI", success, last_ret, last_err)
 		--we no longer care about the coroutine's status. we're done.
 	end
-	return last_ret, last_err
+	if not last_ret and not last_err then 
+		return self 
+	else
+		return last_ret, last_err
+	end
 end
 
 
@@ -175,6 +178,7 @@ function new(datatype, model, arg)
 			end
 			if not key then error(("Cannot %s data without a key"):format(operation)) end
 			local res, err = transactionize(self, model.redis, self:getCallbacks(operation))
+			print(type(res), err)
 			return (res and self), err
 		end
 	end

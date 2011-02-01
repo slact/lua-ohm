@@ -83,6 +83,12 @@ if not telescope then
 			assert(not v)
 		end
 	end
+
+	function assert_nil(...)
+		for i,v in pairs{...} do
+			assert(type(v)=='nil')
+		end
+	end
 end
 
 context("Initialization", function()
@@ -108,7 +114,7 @@ context("Initialization", function()
 			}
 		}, newr())
 		assert_equal(M:new({foo=11}):getFoo(), 11)
-		assert_true(lohm.isModel(M))
+		--assert_true(lohm.isModel(M))
 		M:getFirst()
 	end)
 end)
@@ -210,7 +216,7 @@ context("References", function()
 		assert_equal(t1prime.moo.bar, t1.moo.bar)
 
 		t1:delete()
-		assert_false(Thing[tonumber(t:getId())])
+		assert_nil(Thing[tonumber(t:getId())])
 
 		local t2 = Thing:new({z="9", moo=Moo:new({aux='bax'})}):save()
 	end)
@@ -274,8 +280,6 @@ context("References", function()
 		for i,v in pairs(bars) do
 			table.insert(foo.manyBar, v)
 		end
-		debug.print("PRINTY", foo.save)
-		os.exit()
 		assert_equal(foo:save(), foo)
 
 		local foo_take2 = Foo:findOne(foo:getId())
