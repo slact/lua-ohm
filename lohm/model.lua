@@ -185,8 +185,8 @@ function new(arg, redisconn)
 	local key = arg.key
 	model.keyf = key --format-string for the key
 	
-	local idmatch = key:gsub("([%^%$%(%)%.%[%]%*%+%-%?])", "%%%1") --note that we aren't filtering the % char. because it's used in sprintf. 
-	idmatch = ("^" .. idmatch .. "$"):format("(.*)")
+	local idmatch = key:gsub("([%^%$%(%)%.%[%]%*%+%-%?])", "<0/0>%1") --note that we aren't filtering the % char. because it's used in sprintf. 
+	idmatch = ("^" .. idmatch .. "$"):format("(.*)"):gsub("<0/0>", "%%")
 	model.id = function(self, key)
 		print(debug.traceback())
 		return key:find(idmatch)
