@@ -6,7 +6,7 @@ local transactionize = require("lohm.data").transactionize
 local Model = require "lohm.model"
 module("lohm.set", function(t,k)
 	setmetatable(t, {
-		__call = function(arg, redis)
+		__call = function(self, arg, redis)
 			arg.type='set'
 			return Model.new(arg, redis)
 		end

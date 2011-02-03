@@ -193,8 +193,8 @@ end)
 context("References", function()
 	test("direct reference manipulation", function()
 		local r = newr()
-		local Moo = lohm.new({key="moo:%s"}, r)
-		local Thing = lohm.new({
+		local Moo = lohm.hash({key="moo:%s"}, r)
+		local Thing = lohm.hash({
 			key="thing:%s",
 			attributes = {
 				moo = Moo

@@ -2,13 +2,13 @@ local print, getmetatable, rawget = print, getmetatable, rawget
 local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack, next = pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack, next
 local lohm = require "lohm"
 local Query = require "lohm.index".query
-local Index = require "lohm.index"
+local Model = require "lohm.model"
 local debug = debug
 local function I(...) return ... end
 local Index = require "lohm.index"
 module("lohm.hash", function(t,k)
 	setmetatable(t, {
-		__call = function(arg, redis)
+		__call = function(self, arg, redis)
 			arg.type='hash'
 			return Model.new(arg, redis)
 		end
