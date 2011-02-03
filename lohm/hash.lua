@@ -167,6 +167,7 @@ function initialize(prototype, arg)
 				end
 				assert(type(newval)~='table')
 				assert(self:getId())
+				redis:multi()
 				if newval ~= oldval or (not newval and deletable_attributes[attr]) then
 					assert(index:update(self:getId(), newval, savedval))
 				end
