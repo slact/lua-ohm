@@ -23,10 +23,8 @@ module ("lohm.data", function(t)
 					local res = self.new(k, model, arg)
 					return res
 				end
-			elseif datatypes[k]==false then
-				error(("%s is an invalid redis data type, or it hasn't been implemented in lohm yet."):format(k))
 			else
-				error("Leaky " .. k)
+				error(("%s is an invalid redis data type, or it hasn't been implemented in lohm yet."):format(k))
 			end
 		end
 	})
