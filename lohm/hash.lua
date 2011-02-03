@@ -178,7 +178,6 @@ function initialize(prototype, arg)
 				query = Query(this_set, model)
 			end
 		end
-		model.redis:echo("FOO")
 		return query:exec()
 	end
 	
