@@ -187,6 +187,11 @@ context("Indexing", function()
 		for i, v in pairs(res[1]) do
 			assert_equal(tostring(v), tostring(findey[i]))
 		end
+		
+		local experiment_one = res[1]
+		experiment_one.i3="baconated grapefruit"
+		experiment_one:save()
+		os.exit(23)
 	end)
 end)
 

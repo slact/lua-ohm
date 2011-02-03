@@ -20,7 +20,10 @@ function initialize(prototype, arg)
 	local references, indices
 	--custom attribute stuff
 	local attributes, indices = arg.attributes or {}, {}
-
+	
+	--track attribute-deletion
+	local deletable_attributes = {}
+	
 	prototype:addCallback('load', function(self, redis)
 		if not self then return nil, "No hash to load..." end
 		local id = self:getId()
@@ -35,6 +38,7 @@ function initialize(prototype, arg)
 			return nil, "Redis hash at " .. self:getKey() .. " not found."
 		else
 			for k, v in pairs(loaded_data) do
+				deletable_attributes[k]=true
 				if not attributes[k] then
 					self[k]=v
 				end
@@ -72,7 +76,11 @@ function initialize(prototype, arg)
 		return {
 			load=function(self, redis, attr)
 				assert(type(attr)~='table')
-				return redis:hget(self:getKey(), attr)
+				local res, err = redis:hget(self:getKey(), attr)
+				if res then
+					deletable_attributes[attr]=true
+				end
+				return res, err
 			end, 
 			save=function(self, redis, attr, val)
 				return redis:hset(self:getKey(), attr, val)
@@ -159,7 +167,9 @@ function initialize(prototype, arg)
 				end
 				assert(type(newval)~='table')
 				assert(self:getId())
-				assert(index:update(self:getId(), newval, savedval))
+				if newval ~= oldval or (not newval and deletable_attributes[attr]) then
+					assert(index:update(self:getId(), newval, savedval))
+				end
 			end)
 
 			prototype:addCallback('delete', function(self, redis)
