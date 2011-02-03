@@ -191,6 +191,9 @@ context("Indexing", function()
 		local experiment_one = res[1]
 		experiment_one.i3="baconated grapefruit"
 		experiment_one:save()
+		
+		experiment_one.i3=nil
+		experiment_one:save()
 		os.exit(23)
 	end)
 end)

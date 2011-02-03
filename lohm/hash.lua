@@ -64,7 +64,11 @@ function initialize(prototype, arg)
 		if next(hash_change) then --make sure changeset is non-empty
 			redis:hmset(key, hash_change)
 		end
-		--IMPORTANT TODO: attribute removal.
+		for attr,v in pairs(deletable_attributes) do
+			if not rawget(self, attr) then 
+				redis:hdel(key, attr)
+			end
+		end
 		return self
 	end):addCallback('delete', function(self, redis)
 		redis:multi()
