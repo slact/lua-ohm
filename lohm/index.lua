@@ -108,11 +108,13 @@ function new(model, name)
 			assert(type(newval)~='table')
 			assert(type(oldval)~='table')
 			local redis = self.model.redis
-			if(oldval~=nil) then
-				redis:srem(self:getSetKey(oldval), id)
-			end
-			if(newval~=nil) then
-				redis:sadd(self:getSetKey(newval), id)
+			if oldval~=newval then
+				if(oldval~=nil) then
+					redis:srem(self:getSetKey(oldval), id)
+				end
+				if(newval~=nil) then
+					redis:sadd(self:getSetKey(newval), id)
+				end
 			end
 			return self
 		end,
