@@ -1,4 +1,4 @@
-local print, getmetatable, rawget = print, getmetatable, rawget
+local print, getmetatable, rawget, rawset, tostring = print, getmetatable, rawget, rawset, tostring
 local pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack, next = pairs, ipairs, table, error, setmetatable, assert, type, coroutine, unpack, next
 local lohm = require "lohm"
 local Query = require "lohm.index".query
@@ -22,7 +22,11 @@ function initialize(prototype, arg)
 	local attributes, indices = arg.attributes or {}, {}
 	
 	--track attribute-deletion
-	local deletable_attributes = {}
+	local deletable_attributes = setmetatable({}, {__mode='k', __index = function(t, k) 
+		local ret = {};
+		rawset(t, k, ret)
+		return ret
+	end})
 	
 	prototype:addCallback('load', function(self, redis)
 		if not self then return nil, "No hash to load..." end
@@ -38,7 +42,7 @@ function initialize(prototype, arg)
 			return nil, "Redis hash at " .. self:getKey() .. " not found."
 		else
 			for k, v in pairs(loaded_data) do
-				deletable_attributes[k]=true
+				deletable_attributes[self][k]=true
 				if not attributes[k] then
 					self[k]=v
 				end
@@ -64,7 +68,7 @@ function initialize(prototype, arg)
 		if next(hash_change) then --make sure changeset is non-empty
 			redis:hmset(key, hash_change)
 		end
-		for attr,v in pairs(deletable_attributes) do
+		for attr,v in pairs(deletable_attributes[self]) do
 			if not rawget(self, attr) then 
 				redis:hdel(key, attr)
 			end
@@ -82,7 +86,7 @@ function initialize(prototype, arg)
 				assert(type(attr)~='table')
 				local res, err = redis:hget(self:getKey(), attr)
 				if res then
-					deletable_attributes[attr]=true
+					deletable_attributes[self][attr]=true
 				end
 				return res, err
 			end, 
@@ -172,7 +176,7 @@ function initialize(prototype, arg)
 				assert(type(newval)~='table')
 				assert(self:getId())
 				redis:multi()
-				if newval ~= oldval or (not newval and deletable_attributes[attr]) then
+				if newval ~= oldval or (not newval and deletable_attributes[self][attr]) then
 					assert(index:update(self:getId(), newval, savedval))
 				end
 			end)
