@@ -119,7 +119,7 @@ function new(model, name)
 			return self
 		end,
 		getSet = function(self, val)
-			return self.model:new(nil, hash(val), false)
+			return self.model:new(nil, hash(val), true)
 		end,
 		getSetKey = function(self, val)
 			return (self.model:key(hash(val)))

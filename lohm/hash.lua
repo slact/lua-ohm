@@ -37,18 +37,20 @@ function initialize(prototype, arg)
 		assert(hgetall_res.queued==true)
 		local raw_loaded_data = coroutine.yield()
 		local loaded_data = raw_loaded_data[1]
-
+		
+		--debug.print("LOAD", self:getKey(), raw_loaded_data, self)
+		--print(debug.traceback())
+			
 		if not next(loaded_data) then
 			return nil, "Redis hash at " .. self:getKey() .. " not found."
 		else
 			for k, v in pairs(loaded_data) do
 				deletable_attributes[self][k]=true
-				if not attributes[k] then
+				if not rawget(attributes, k) then
 					self[k]=v
 				end
 			end
 		end
-		return self
 	end):addCallback('save', function(self, redis)
 		local key = self:getKey()
 		assert(key, "Tried to save data without a key or key assignment scheme. You can't do that.")

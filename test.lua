@@ -129,7 +129,7 @@ context("Basic manipulation", function()
 		m:set('barbar','baz'):save()
 		assert(m:getId()==id)
 		local checkM = assert(Model:findOne(id))
-		assert_true( checkM.barbar=="baz" )
+		assert_true( rawget(checkM,'barbar')=="baz" )
 		assert_true( "barbar"==checkM.foo )
 		assert(checkM:delete())
 		local notfound = Model[tonumber(id)]
@@ -182,6 +182,8 @@ context("Indexing", function()
 		end
 		assert_equal(#assert(M:findByAttr{i3=1})+#assert(M:findByAttr{i3=2}), 300)
 		local res = M:findByAttr(findey)
+		
+		assert_equal(res[1].i3, tostring(findey.i3))
 		assert_equal(#res, 1)
 		assert_equal(res[1].i3, tostring(findey.i3))
 		for i, v in pairs(res[1]) do
@@ -194,7 +196,6 @@ context("Indexing", function()
 		
 		experiment_one.i3=nil
 		experiment_one:save()
-		os.exit(23)
 	end)
 end)
 
